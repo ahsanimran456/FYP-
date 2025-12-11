@@ -7,9 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
-import { Briefcase, FileText, Calendar, TrendingUp, MapPin, Clock, Loader2, Heart, RefreshCw } from "lucide-react"
+import { Briefcase, FileText, Calendar, TrendingUp, MapPin, Clock, Loader2, RefreshCw, CheckCircle2, Star } from "lucide-react"
 import { collection, query, where, getDocs, limit, doc, getDoc } from "firebase/firestore"
-// Note: Applications are now stored inside jobs collection (job.applicants array)
 import { db } from "@/lib/firebase"
 
 export default function ApplicantDashboard() {
@@ -20,8 +19,8 @@ export default function ApplicantDashboard() {
   const [stats, setStats] = useState({
     applications: 0,
     interviews: 0,
-    savedJobs: 0,
-    profileViews: 0,
+    shortlisted: 0,
+    hired: 0,
   })
   const [recentApplications, setRecentApplications] = useState([])
   const [recommendedJobs, setRecommendedJobs] = useState([])
@@ -59,17 +58,15 @@ export default function ApplicantDashboard() {
           { name: "LinkedIn", completed: !!user.linkedIn },
           { name: "Experience", completed: user.experiences?.length > 0 },
           { name: "Education", completed: user.education?.length > 0 },
+          { name: "Resume", completed: !!user.resumeUrl },
         ]
         
         const completedCount = completionItems.filter(item => item.completed).length
         setProfileCompletion(Math.round((completedCount / completionItems.length) * 100))
         setMissingProfileItems(completionItems.filter(item => !item.completed).map(item => item.name))
-        
-        // Set saved jobs count
-        setStats(prev => ({ ...prev, savedJobs: user.savedJobs?.length || 0 }))
       }
 
-      // Fetch applications from jobs collection (applicants array inside each job)
+      // Fetch applications from jobs collection
       const allJobsSnapshot = await getDocs(collection(db, "jobs"))
       const applications = []
       
@@ -102,15 +99,18 @@ export default function ApplicantDashboard() {
       })
       
       const interviews = applications.filter(app => app.status === "interview_scheduled").length
+      const shortlisted = applications.filter(app => app.status === "shortlisted").length
+      const hired = applications.filter(app => app.status === "hired").length
       
-      setStats(prev => ({
-        ...prev,
+      setStats({
         applications: applications.length,
         interviews: interviews,
-      }))
+        shortlisted: shortlisted,
+        hired: hired,
+      })
       
       // Format recent applications
-      const recent = applications.slice(0, 3).map(app => ({
+      const recent = applications.slice(0, 4).map(app => ({
         id: app.id,
         title: app.jobTitle,
         company: app.jobCompany,
@@ -120,26 +120,31 @@ export default function ApplicantDashboard() {
       }))
       setRecentApplications(recent)
 
-      // Fetch recommended jobs (active jobs)
+      // Fetch recommended jobs (active jobs user hasn't applied to)
       const jobsQuery = query(
         collection(db, "jobs"),
         where("status", "==", "active"),
-        limit(6)
+        limit(10)
       )
       const jobsSnapshot = await getDocs(jobsQuery)
-      const jobs = jobsSnapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          title: data.jobtitle || data.title || "Untitled Job",
-          company: data.companyName || "Company",
-          location: data.location || "Not specified",
-          salary: data.salary || "Competitive",
-          type: data.type || "Full-time",
-          posted: getTimeAgo(data.createdAt?.toDate?.()),
-        }
-      })
-      setRecommendedJobs(jobs.slice(0, 3))
+      const appliedJobIds = applications.map(a => a.jobId)
+      
+      const jobs = jobsSnapshot.docs
+        .filter(doc => !appliedJobIds.includes(doc.id))
+        .slice(0, 3)
+        .map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            title: data.jobtitle || data.title || "Untitled Job",
+            company: data.companyName || "Company",
+            location: data.location || "Not specified",
+            salary: data.salary || "Competitive",
+            type: data.type || "Full-time",
+            posted: getTimeAgo(data.createdAt?.toDate?.()),
+          }
+        })
+      setRecommendedJobs(jobs)
 
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
@@ -175,14 +180,15 @@ export default function ApplicantDashboard() {
   const getStatusColor = (status) => {
     switch (status) {
       case "interview_scheduled":
+        return "bg-purple-500/10 text-purple-700 dark:text-purple-400"
+      case "shortlisted":
         return "bg-green-500/10 text-green-700 dark:text-green-400"
-      case "reviewed":
-      case "under_review":
-        return "bg-blue-500/10 text-blue-700 dark:text-blue-400"
       case "applied":
         return "bg-gray-500/10 text-gray-700 dark:text-gray-400"
       case "rejected":
         return "bg-red-500/10 text-red-700 dark:text-red-400"
+      case "hired":
+        return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
       default:
         return "bg-gray-500/10 text-gray-700 dark:text-gray-400"
     }
@@ -191,9 +197,8 @@ export default function ApplicantDashboard() {
   const getStatusLabel = (status) => {
     const labels = {
       applied: "Applied",
-      under_review: "Under Review",
-      reviewed: "Reviewed",
-      interview_scheduled: "Interview Scheduled",
+      shortlisted: "Shortlisted",
+      interview_scheduled: "Interview",
       rejected: "Rejected",
       hired: "Hired",
     }
@@ -212,10 +217,10 @@ export default function ApplicantDashboard() {
   }
 
   const dashboardStats = [
-    { icon: FileText, label: "Applications", value: stats.applications.toString(), change: `${stats.applications} total`, color: "text-blue-600" },
-    { icon: Calendar, label: "Interviews", value: stats.interviews.toString(), change: stats.interviews > 0 ? "Upcoming" : "None", color: "text-green-600" },
-    { icon: Heart, label: "Saved Jobs", value: stats.savedJobs.toString(), change: "View saved", color: "text-red-500" },
-    { icon: TrendingUp, label: "Profile", value: `${profileCompletion}%`, change: "Completion", color: "text-chart-4" },
+    { icon: FileText, label: "Applications", value: stats.applications.toString(), change: `${stats.applications} total`, color: "text-blue-600", bgColor: "bg-blue-500/10" },
+    { icon: Star, label: "Shortlisted", value: stats.shortlisted.toString(), change: stats.shortlisted > 0 ? "Looking good!" : "Keep applying", color: "text-green-600", bgColor: "bg-green-500/10" },
+    { icon: Calendar, label: "Interviews", value: stats.interviews.toString(), change: stats.interviews > 0 ? "Upcoming" : "None yet", color: "text-purple-600", bgColor: "bg-purple-500/10" },
+    { icon: CheckCircle2, label: "Hired", value: stats.hired.toString(), change: stats.hired > 0 ? "Congratulations!" : "Keep trying", color: "text-emerald-600", bgColor: "bg-emerald-500/10" },
   ]
 
   return (
@@ -245,7 +250,7 @@ export default function ApplicantDashboard() {
                     <p className="mt-2 text-3xl font-bold text-foreground">{stat.value}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{stat.change}</p>
                   </div>
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-lg bg-muted ${stat.color}`}>
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${stat.bgColor} ${stat.color}`}>
                     <Icon className="h-6 w-6" />
                   </div>
                 </div>
@@ -254,6 +259,27 @@ export default function ApplicantDashboard() {
           )
         })}
       </div>
+
+      {/* Hired Celebration */}
+      {stats.hired > 0 && (
+        <Card className="border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 to-green-500/10">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
+                <span className="text-3xl">🎉</span>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-emerald-700 dark:text-emerald-400">
+                  Congratulations on getting hired!
+                </h3>
+                <p className="text-emerald-600 dark:text-emerald-500">
+                  You've been hired for {stats.hired} position{stats.hired > 1 ? 's' : ''}. Best of luck in your new role!
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Recent Applications */}
@@ -283,7 +309,7 @@ export default function ApplicantDashboard() {
             ) : (
               <div className="space-y-4">
                 {recentApplications.map((app) => (
-                  <div key={app.id} className="flex items-start gap-4 rounded-lg border p-4">
+                  <div key={app.id} className="flex items-start gap-4 rounded-lg border p-4 transition-all hover:shadow-sm">
                     <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold">
                       {app.company?.charAt(0) || "C"}
                     </div>
@@ -322,13 +348,22 @@ export default function ApplicantDashboard() {
               </div>
               <Progress value={profileCompletion} className="h-2" />
             </div>
-            {profileCompletion < 100 && (
+            {profileCompletion === 100 ? (
+              <div className="rounded-lg bg-green-500/10 p-3 border border-green-500/20">
+                <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                  ✅ Your profile is complete!
+                </p>
+                <p className="text-xs text-green-600 dark:text-green-500 mt-1">
+                  You're ready to apply for jobs.
+                </p>
+              </div>
+            ) : (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">Complete these steps:</p>
                 <ul className="space-y-1 text-sm text-muted-foreground">
                   {missingProfileItems.slice(0, 4).map((item) => (
                     <li key={item} className="flex items-center gap-2">
-                      <span>○</span> Add {item.toLowerCase()}
+                      <span className="text-orange-500">○</span> Add {item.toLowerCase()}
                     </li>
                   ))}
                   {missingProfileItems.length > 4 && (
@@ -354,7 +389,7 @@ export default function ApplicantDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>Recommended for You</CardTitle>
-              <CardDescription>Jobs matching your profile and preferences</CardDescription>
+              <CardDescription>Jobs you haven't applied to yet</CardDescription>
             </div>
             <Link href="/applicant/jobs">
               <Button variant="outline" size="sm">
@@ -367,7 +402,8 @@ export default function ApplicantDashboard() {
           {recommendedJobs.length === 0 ? (
             <div className="text-center py-8">
               <Briefcase className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <p className="mt-2 text-muted-foreground">No jobs available at the moment</p>
+              <p className="mt-2 text-muted-foreground">No new job recommendations</p>
+              <p className="text-sm text-muted-foreground">You may have applied to all available jobs!</p>
               <Link href="/applicant/jobs">
                 <Button variant="outline" className="mt-4">Browse Jobs</Button>
               </Link>
@@ -378,7 +414,6 @@ export default function ApplicantDashboard() {
                 <div key={job.id} className="space-y-3 rounded-lg border p-4 transition-all hover:shadow-md">
                   <div className="flex items-start justify-between">
                     <h4 className="font-semibold text-foreground">{job.title}</h4>
-                    <Badge variant="secondary">{job.matchScore}%</Badge>
                   </div>
                   <p className="text-sm font-medium text-muted-foreground">{job.company}</p>
                   <div className="space-y-2 text-sm text-muted-foreground">
@@ -404,6 +439,41 @@ export default function ApplicantDashboard() {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Link href="/applicant/jobs">
+              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
+                <Briefcase className="h-6 w-6" />
+                <span>Browse Jobs</span>
+              </Button>
+            </Link>
+            <Link href="/applicant/applications">
+              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
+                <FileText className="h-6 w-6" />
+                <span>My Applications</span>
+              </Button>
+            </Link>
+            <Link href="/applicant/interviews">
+              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
+                <Calendar className="h-6 w-6" />
+                <span>Interviews</span>
+              </Button>
+            </Link>
+            <Link href="/applicant/profile">
+              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
+                <TrendingUp className="h-6 w-6" />
+                <span>My Profile</span>
+              </Button>
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>

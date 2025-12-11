@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -20,14 +20,12 @@ import {
   Clock,
   XCircle,
   AlertCircle,
-  TrendingUp,
   Eye,
   Loader2,
   RefreshCw,
   FileText,
-  Trash2,
 } from "lucide-react"
-import { collection, getDocs, doc, updateDoc } from "firebase/firestore"
+import { collection, getDocs, onSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 export default function ApplicationsPage() {
@@ -39,65 +37,82 @@ export default function ApplicationsPage() {
   const [applications, setApplications] = useState([])
   const [filteredApplications, setFilteredApplications] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  const printRef = useRef(null)
 
-  // Fetch applications from jobs collection (applicants array inside each job)
-  const fetchApplications = async () => {
-    try {
-      setIsLoading(true)
-      const userId = localStorage.getItem("userId")
+  // Process jobs snapshot to find user's applications
+  const processJobsSnapshot = (snapshot, userId) => {
+    const applicationsData = []
+    
+    snapshot.docs.forEach((jobDoc) => {
+      const jobData = jobDoc.data()
+      const applicantsArray = jobData.applicants || []
       
-      if (!userId) {
-        setIsLoading(false)
-        return
+      // Find if current user has applied to this job
+      const userApplication = applicantsArray.find(
+        (applicant) => applicant.applicantId === userId
+      )
+      
+      if (userApplication) {
+        applicationsData.push({
+          id: `${jobDoc.id}_${userId}`,
+          jobId: jobDoc.id,
+          title: jobData.jobtitle || jobData.title || "Untitled Job",
+          company: jobData.companyName || "Company",
+          location: jobData.location || "Not specified",
+          salary: jobData.salary || "Competitive",
+          appliedDate: userApplication.appliedAt ? new Date(userApplication.appliedAt) : new Date(),
+          status: userApplication.status || "applied",
+          coverLetter: userApplication.coverLetter,
+          department: jobData.department || "General",
+          interviewDetails: userApplication.interviewDetails || null,
+          applicantData: userApplication,
+        })
       }
+    })
+    
+    // Sort by most recent
+    applicationsData.sort((a, b) => b.appliedDate - a.appliedDate)
+    
+    return applicationsData
+  }
 
-      // Fetch all jobs and find where user has applied
-      const jobsSnapshot = await getDocs(collection(db, "jobs"))
-      const applicationsData = []
-      
-      jobsSnapshot.docs.forEach((jobDoc) => {
-        const jobData = jobDoc.data()
-        const applicantsArray = jobData.applicants || []
-        
-        // Find if current user has applied to this job
-        const userApplication = applicantsArray.find(
-          (applicant) => applicant.applicantId === userId
-        )
-        
-        if (userApplication) {
-          applicationsData.push({
-            id: `${jobDoc.id}_${userId}`, // Unique ID for the application
-            jobId: jobDoc.id,
-            title: jobData.jobtitle || jobData.title || "Untitled Job",
-            company: jobData.companyName || "Company",
-            location: jobData.location || "Not specified",
-            salary: jobData.salary || "Competitive",
-            appliedDate: userApplication.appliedAt ? new Date(userApplication.appliedAt) : new Date(),
-            status: userApplication.status || "applied",
-            coverLetter: userApplication.coverLetter,
-            department: jobData.department || "General",
-            // Store reference to update later
-            applicantData: userApplication,
-          })
-        }
-      })
-      
-      // Sort by most recent
-      applicationsData.sort((a, b) => b.appliedDate - a.appliedDate)
+  // Setup real-time listener for applications
+  const setupApplicationsListener = () => {
+    const userId = localStorage.getItem("userId")
+    
+    if (!userId) {
+      setIsLoading(false)
+      return null
+    }
+
+    setIsLoading(true)
+
+    // Real-time listener for all jobs (to track status changes)
+    const unsubscribe = onSnapshot(collection(db, "jobs"), (snapshot) => {
+      const applicationsData = processJobsSnapshot(snapshot, userId)
       
       setApplications(applicationsData)
       setFilteredApplications(applicationsData)
-      console.log("✅ Fetched", applicationsData.length, "applications")
-    } catch (error) {
-      console.error("❌ Error fetching applications:", error)
+      console.log("✅ Real-time applications update:", applicationsData.length, "applications")
+      setIsLoading(false)
+    }, (error) => {
+      console.error("❌ Error in applications listener:", error)
       toast({
         title: "Error loading applications",
         description: "Failed to load your applications. Please try again.",
         variant: "destructive",
       })
-    } finally {
       setIsLoading(false)
-    }
+    })
+    
+    return unsubscribe
+  }
+
+  // Legacy fetch function for manual refresh
+  const fetchApplications = async () => {
+    // This will be handled by real-time listener
+    setIsLoading(true)
+    setTimeout(() => setIsLoading(false), 500)
   }
 
   useEffect(() => {
@@ -105,7 +120,15 @@ export default function ApplicationsPage() {
       setShowSuccess(true)
       setTimeout(() => setShowSuccess(false), 5000)
     }
-    fetchApplications()
+    
+    const unsubscribe = setupApplicationsListener()
+    
+    // Cleanup listener on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe()
+      }
+    }
   }, [searchParams])
 
   // Filter applications
@@ -126,12 +149,14 @@ export default function ApplicationsPage() {
         switch (filterStatus) {
           case "interview":
             return app.status === "interview_scheduled"
-          case "review":
-            return app.status === "reviewed" || app.status === "under_review"
+          case "shortlisted":
+            return app.status === "shortlisted"
           case "applied":
             return app.status === "applied"
           case "rejected":
             return app.status === "rejected"
+          case "hired":
+            return app.status === "hired"
           default:
             return true
         }
@@ -141,59 +166,18 @@ export default function ApplicationsPage() {
     setFilteredApplications(result)
   }, [searchQuery, filterStatus, applications])
 
-  // Withdraw application (remove from job's applicants array)
-  const handleWithdraw = async (applicationId, jobId) => {
-    try {
-      const userId = localStorage.getItem("userId")
-      
-      // Get current job data
-      const jobRef = doc(db, "jobs", jobId)
-      const jobsSnapshot = await getDocs(collection(db, "jobs"))
-      const jobDoc = jobsSnapshot.docs.find(d => d.id === jobId)
-      
-      if (jobDoc) {
-        const jobData = jobDoc.data()
-        const currentApplicants = jobData.applicants || []
-        
-        // Filter out the current user's application
-        const updatedApplicants = currentApplicants.filter(
-          (applicant) => applicant.applicantId !== userId
-        )
-        
-        // Update the job document
-        await updateDoc(jobRef, {
-          applicants: updatedApplicants,
-        })
-        
-        setApplications(applications.filter((app) => app.id !== applicationId))
-        toast({
-          title: "Application withdrawn",
-          description: "Your application has been withdrawn successfully.",
-        })
-      }
-    } catch (error) {
-      console.error("Error withdrawing application:", error)
-      toast({
-        title: "Error",
-        description: "Failed to withdraw application.",
-        variant: "destructive",
-      })
-    }
-  }
-
   const getStatusIcon = (status) => {
     switch (status) {
       case "interview_scheduled":
+        return <CheckCircle2 className="h-5 w-5 text-purple-600" />
+      case "shortlisted":
         return <CheckCircle2 className="h-5 w-5 text-green-600" />
-      case "reviewed":
-      case "under_review":
-        return <Clock className="h-5 w-5 text-blue-600" />
       case "applied":
         return <AlertCircle className="h-5 w-5 text-gray-600" />
       case "rejected":
         return <XCircle className="h-5 w-5 text-red-600" />
       case "hired":
-        return <CheckCircle2 className="h-5 w-5 text-green-600" />
+        return <CheckCircle2 className="h-5 w-5 text-emerald-600" />
       default:
         return <Clock className="h-5 w-5 text-gray-600" />
     }
@@ -202,16 +186,15 @@ export default function ApplicationsPage() {
   const getStatusColor = (status) => {
     switch (status) {
       case "interview_scheduled":
+        return "bg-purple-500/10 text-purple-700 dark:text-purple-400"
+      case "shortlisted":
         return "bg-green-500/10 text-green-700 dark:text-green-400"
-      case "reviewed":
-      case "under_review":
-        return "bg-blue-500/10 text-blue-700 dark:text-blue-400"
       case "applied":
         return "bg-gray-500/10 text-gray-700 dark:text-gray-400"
       case "rejected":
         return "bg-red-500/10 text-red-700 dark:text-red-400"
       case "hired":
-        return "bg-green-500/10 text-green-700 dark:text-green-400"
+        return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
       default:
         return "bg-gray-500/10 text-gray-700 dark:text-gray-400"
     }
@@ -220,8 +203,7 @@ export default function ApplicationsPage() {
   const getStatusLabel = (status) => {
     const labels = {
       applied: "Applied",
-      under_review: "Under Review",
-      reviewed: "Reviewed",
+      shortlisted: "Shortlisted",
       interview_scheduled: "Interview Scheduled",
       rejected: "Rejected",
       hired: "Hired",
@@ -233,9 +215,8 @@ export default function ApplicationsPage() {
     switch (status) {
       case "interview_scheduled":
         return "Prepare for your interview"
-      case "reviewed":
-      case "under_review":
-        return "Waiting for recruiter decision"
+      case "shortlisted":
+        return "You've been shortlisted! Interview may be scheduled soon"
       case "applied":
         return "Application submitted, waiting for review"
       case "rejected":
@@ -249,9 +230,11 @@ export default function ApplicationsPage() {
 
   const statusCounts = {
     all: applications.length,
-    active: applications.filter((app) => ["interview_scheduled", "reviewed", "under_review", "applied"].includes(app.status)).length,
+    active: applications.filter((app) => ["interview_scheduled", "shortlisted", "applied"].includes(app.status)).length,
     interviews: applications.filter((app) => app.status === "interview_scheduled").length,
+    shortlisted: applications.filter((app) => app.status === "shortlisted").length,
     rejected: applications.filter((app) => app.status === "rejected").length,
+    hired: applications.filter((app) => app.status === "hired").length,
   }
 
   if (isLoading) {
@@ -322,7 +305,7 @@ export default function ApplicationsPage() {
                 <p className="text-sm text-muted-foreground">Interviews</p>
                 <p className="mt-1 text-3xl font-bold text-foreground">{statusCounts.interviews}</p>
               </div>
-              <CheckCircle2 className="h-8 w-8 text-green-600" />
+              <CheckCircle2 className="h-8 w-8 text-purple-600" />
             </div>
           </CardContent>
         </Card>
@@ -330,12 +313,10 @@ export default function ApplicationsPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Response Rate</p>
-                <p className="mt-1 text-3xl font-bold text-foreground">
-                  {statusCounts.all > 0 ? Math.round(((statusCounts.all - statusCounts.active + statusCounts.interviews) / statusCounts.all) * 100) : 0}%
-                </p>
+                <p className="text-sm text-muted-foreground">Hired</p>
+                <p className="mt-1 text-3xl font-bold text-foreground">{statusCounts.hired}</p>
               </div>
-              <TrendingUp className="h-8 w-8 text-accent" />
+              <CheckCircle2 className="h-8 w-8 text-emerald-600" />
             </div>
           </CardContent>
         </Card>
@@ -360,9 +341,10 @@ export default function ApplicationsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Applications</SelectItem>
-                <SelectItem value="interview">Interview Scheduled</SelectItem>
-                <SelectItem value="review">Under Review</SelectItem>
                 <SelectItem value="applied">Applied</SelectItem>
+                <SelectItem value="shortlisted">Shortlisted</SelectItem>
+                <SelectItem value="interview">Interview Scheduled</SelectItem>
+                <SelectItem value="hired">Hired</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
@@ -388,224 +370,265 @@ export default function ApplicationsPage() {
 
       {/* Applications List */}
       {applications.length > 0 && (
-        <Tabs defaultValue="all" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
-            <TabsTrigger value="active">Active ({statusCounts.active})</TabsTrigger>
-            <TabsTrigger value="interviews">Interviews ({statusCounts.interviews})</TabsTrigger>
-            <TabsTrigger value="rejected">Rejected ({statusCounts.rejected})</TabsTrigger>
-          </TabsList>
+        <div id="print-applications">
+          <Tabs defaultValue="all" className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
+              <TabsTrigger value="active">Active ({statusCounts.active})</TabsTrigger>
+              <TabsTrigger value="interviews">Interviews ({statusCounts.interviews})</TabsTrigger>
+              <TabsTrigger value="hired">Hired ({statusCounts.hired})</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="all" className="space-y-4">
-            {filteredApplications.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center p-12">
-                  <Search className="h-12 w-12 text-muted-foreground" />
-                  <h2 className="mt-4 text-xl font-semibold">No results found</h2>
-                  <p className="mt-2 text-center text-muted-foreground">
-                    Try adjusting your search or filters.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              filteredApplications.map((app) => (
-                <Card key={app.id} className="overflow-hidden transition-all hover:shadow-md">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex gap-4">
-                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-primary/10 text-primary font-bold">
-                          {app.company?.charAt(0) || "C"}
-                        </div>
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1">
-                              <Link href={`/applicant/jobs/${app.jobId}`}>
-                                <h3 className="font-semibold text-foreground hover:text-primary">{app.title}</h3>
-                              </Link>
-                              <p className="text-sm text-muted-foreground">{app.company}</p>
-                            </div>
-                            <Badge className={getStatusColor(app.status)}>{getStatusLabel(app.status)}</Badge>
-                          </div>
-                          <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <MapPin className="h-4 w-4" />
-                              {app.location}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <span className="text-xs font-semibold text-primary">AED</span>
-                              {app.salary}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-4 w-4" />
-                              Applied {app.appliedDate.toLocaleDateString()}
-                            </span>
-                          </div>
-                          <Separator />
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(app.status)}
-                            <p className="text-sm text-muted-foreground">
-                              <span className="font-medium">Next:</span> {getNextStep(app.status)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 lg:flex-col">
-                        <Link href={`/applicant/jobs/${app.jobId}`} className="flex-1">
-                          <Button variant="outline" className="w-full bg-transparent" size="sm">
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Job
-                          </Button>
-                        </Link>
-                        {app.status === "applied" && (
-                          <Button 
-                            variant="ghost" 
-                            className="flex-1 text-destructive hover:text-destructive" 
-                            size="sm"
-                            onClick={() => handleWithdraw(app.id, app.jobId)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Withdraw
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </TabsContent>
-
-          <TabsContent value="active" className="space-y-4">
-            {applications
-              .filter((app) => ["interview_scheduled", "reviewed", "under_review", "applied"].includes(app.status))
-              .map((app) => (
-                <Card key={app.id} className="overflow-hidden transition-all hover:shadow-md">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex gap-4">
-                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-primary/10 text-primary font-bold">
-                          {app.company?.charAt(0) || "C"}
-                        </div>
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1">
-                              <Link href={`/applicant/jobs/${app.jobId}`}>
-                                <h3 className="font-semibold text-foreground hover:text-primary">{app.title}</h3>
-                              </Link>
-                              <p className="text-sm text-muted-foreground">{app.company}</p>
-                            </div>
-                            <Badge className={getStatusColor(app.status)}>{getStatusLabel(app.status)}</Badge>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(app.status)}
-                            <p className="text-sm text-muted-foreground">{getNextStep(app.status)}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <Link href={`/applicant/jobs/${app.jobId}`}>
-                        <Button variant="outline" size="sm">View Job</Button>
-                      </Link>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-          </TabsContent>
-
-          <TabsContent value="interviews" className="space-y-4">
-            {applications
-              .filter((app) => app.status === "interview_scheduled")
-              .length === 0 ? (
+            <TabsContent value="all" className="space-y-4">
+              {filteredApplications.length === 0 ? (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center p-12">
-                    <Calendar className="h-12 w-12 text-muted-foreground" />
-                    <h2 className="mt-4 text-xl font-semibold">No interviews scheduled</h2>
+                    <Search className="h-12 w-12 text-muted-foreground" />
+                    <h2 className="mt-4 text-xl font-semibold">No results found</h2>
                     <p className="mt-2 text-center text-muted-foreground">
-                      When recruiters schedule interviews, they'll appear here.
+                      Try adjusting your search or filters.
                     </p>
                   </CardContent>
                 </Card>
               ) : (
+                filteredApplications.map((app) => (
+                  <Card key={app.id} className="overflow-hidden transition-all hover:shadow-md">
+                    <CardContent className="p-6">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex gap-4">
+                          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-primary/10 text-primary font-bold">
+                            {app.company?.charAt(0) || "C"}
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-start gap-2">
+                              <div className="flex-1">
+                                <Link href={`/applicant/jobs/${app.jobId}`}>
+                                  <h3 className="font-semibold text-foreground hover:text-primary">{app.title}</h3>
+                                </Link>
+                                <p className="text-sm text-muted-foreground">{app.company}</p>
+                              </div>
+                              <Badge className={getStatusColor(app.status)}>{getStatusLabel(app.status)}</Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <MapPin className="h-4 w-4" />
+                                {app.location}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="text-xs font-semibold text-primary">AED</span>
+                                {app.salary}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-4 w-4" />
+                                Applied {app.appliedDate.toLocaleDateString()}
+                              </span>
+                            </div>
+                            <Separator />
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(app.status)}
+                              <p className="text-sm text-muted-foreground">
+                                <span className="font-medium">Next:</span> {getNextStep(app.status)}
+                              </p>
+                            </div>
+                            {/* Interview Details */}
+                            {app.status === "interview_scheduled" && app.interviewDetails && (
+                              <div className="mt-2 rounded-lg bg-purple-500/10 p-3 border border-purple-500/20">
+                                <p className="text-sm font-medium text-purple-700 dark:text-purple-400">
+                                  📅 Interview: {app.interviewDetails.date} at {app.interviewDetails.time}
+                                </p>
+                                {app.interviewDetails.type && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Type: {app.interviewDetails.type === "google_meet" ? "Google Meet" : 
+                                           app.interviewDetails.type === "zoom" ? "Zoom" :
+                                           app.interviewDetails.type === "phone" ? "Phone Call" : "On-site"}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 lg:flex-col">
+                          <Link href={`/applicant/jobs/${app.jobId}`} className="flex-1">
+                            <Button variant="outline" className="w-full bg-transparent" size="sm">
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Job
+                            </Button>
+                          </Link>
+                          {app.status === "interview_scheduled" && (
+                            <Link href="/applicant/interviews" className="flex-1">
+                              <Button size="sm" className="w-full bg-purple-600 hover:bg-purple-700">
+                                <Calendar className="mr-2 h-4 w-4" />
+                                View Interview
+                              </Button>
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="active" className="space-y-4">
+              {applications
+                .filter((app) => ["interview_scheduled", "shortlisted", "applied"].includes(app.status))
+                .length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center p-12">
+                      <Clock className="h-12 w-12 text-muted-foreground" />
+                      <h2 className="mt-4 text-xl font-semibold">No active applications</h2>
+                      <p className="mt-2 text-center text-muted-foreground">
+                        Apply to jobs to see active applications here.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
                 applications
-                  .filter((app) => app.status === "interview_scheduled")
+                  .filter((app) => ["interview_scheduled", "shortlisted", "applied"].includes(app.status))
                   .map((app) => (
-                    <Card key={app.id} className="overflow-hidden border-green-500/20 bg-green-500/5">
+                    <Card key={app.id} className="overflow-hidden transition-all hover:shadow-md">
                       <CardContent className="p-6">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                           <div className="flex gap-4">
-                            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-green-500/10 text-green-600 font-bold">
+                            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-primary/10 text-primary font-bold">
                               {app.company?.charAt(0) || "C"}
                             </div>
                             <div className="flex-1 space-y-2">
                               <div className="flex items-start gap-2">
                                 <div className="flex-1">
-                                  <h3 className="font-semibold text-foreground">{app.title}</h3>
+                                  <Link href={`/applicant/jobs/${app.jobId}`}>
+                                    <h3 className="font-semibold text-foreground hover:text-primary">{app.title}</h3>
+                                  </Link>
                                   <p className="text-sm text-muted-foreground">{app.company}</p>
                                 </div>
-                                <Badge className="bg-green-500/10 text-green-700">Interview Scheduled</Badge>
+                                <Badge className={getStatusColor(app.status)}>{getStatusLabel(app.status)}</Badge>
                               </div>
                               <div className="flex items-center gap-2">
-                                <CheckCircle2 className="h-5 w-5 text-green-600" />
-                                <p className="text-sm font-medium text-green-700">Prepare for your interview!</p>
+                                {getStatusIcon(app.status)}
+                                <p className="text-sm text-muted-foreground">{getNextStep(app.status)}</p>
                               </div>
                             </div>
                           </div>
                           <Link href={`/applicant/jobs/${app.jobId}`}>
-                            <Button size="sm">View Details</Button>
+                            <Button variant="outline" size="sm">View Job</Button>
                           </Link>
                         </div>
                       </CardContent>
                     </Card>
                   ))
               )}
-          </TabsContent>
+            </TabsContent>
 
-          <TabsContent value="rejected" className="space-y-4">
-            {applications
-              .filter((app) => app.status === "rejected")
-              .length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center p-12">
-                    <CheckCircle2 className="h-12 w-12 text-green-600" />
-                    <h2 className="mt-4 text-xl font-semibold">No rejections</h2>
-                    <p className="mt-2 text-center text-muted-foreground">
-                      Great news! None of your applications have been rejected.
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                applications
-                  .filter((app) => app.status === "rejected")
-                  .map((app) => (
-                    <Card key={app.id} className="overflow-hidden opacity-75">
-                      <CardContent className="p-6">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="flex gap-4">
-                            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-muted text-muted-foreground font-bold">
-                              {app.company?.charAt(0) || "C"}
-                            </div>
-                            <div className="flex-1 space-y-2">
-                              <div className="flex items-start gap-2">
-                                <div className="flex-1">
-                                  <h3 className="font-semibold text-foreground">{app.title}</h3>
-                                  <p className="text-sm text-muted-foreground">{app.company}</p>
-                                </div>
-                                <Badge variant="destructive">Rejected</Badge>
+            <TabsContent value="interviews" className="space-y-4">
+              {applications
+                .filter((app) => app.status === "interview_scheduled")
+                .length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center p-12">
+                      <Calendar className="h-12 w-12 text-muted-foreground" />
+                      <h2 className="mt-4 text-xl font-semibold">No interviews scheduled</h2>
+                      <p className="mt-2 text-center text-muted-foreground">
+                        When recruiters schedule interviews, they'll appear here.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  applications
+                    .filter((app) => app.status === "interview_scheduled")
+                    .map((app) => (
+                      <Card key={app.id} className="overflow-hidden border-purple-500/20 bg-purple-500/5">
+                        <CardContent className="p-6">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex gap-4">
+                              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-purple-500/10 text-purple-600 font-bold">
+                                {app.company?.charAt(0) || "C"}
                               </div>
-                              <p className="text-sm text-muted-foreground">
-                                Applied {app.appliedDate.toLocaleDateString()}
-                              </p>
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <div className="flex-1">
+                                    <h3 className="font-semibold text-foreground">{app.title}</h3>
+                                    <p className="text-sm text-muted-foreground">{app.company}</p>
+                                  </div>
+                                  <Badge className="bg-purple-500/10 text-purple-700">Interview Scheduled</Badge>
+                                </div>
+                                {app.interviewDetails && (
+                                  <div className="rounded-lg bg-purple-500/10 p-3 border border-purple-500/20">
+                                    <p className="text-sm font-medium text-purple-700 dark:text-purple-400">
+                                      📅 {app.interviewDetails.date} at {app.interviewDetails.time}
+                                    </p>
+                                    {app.interviewDetails.link && (
+                                      <a href={app.interviewDetails.link} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:underline">
+                                        Join Meeting
+                                      </a>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle2 className="h-5 w-5 text-purple-600" />
+                                  <p className="text-sm font-medium text-purple-700">Prepare for your interview!</p>
+                                </div>
+                              </div>
                             </div>
+                            <Link href="/applicant/interviews">
+                              <Button size="sm" className="bg-purple-600 hover:bg-purple-700">View Details</Button>
+                            </Link>
                           </div>
-                          <Link href="/applicant/jobs">
-                            <Button variant="outline" size="sm">Find Similar Jobs</Button>
-                          </Link>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-              )}
-          </TabsContent>
-        </Tabs>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
+            </TabsContent>
+
+            <TabsContent value="hired" className="space-y-4">
+              {applications
+                .filter((app) => app.status === "hired")
+                .length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center p-12">
+                      <CheckCircle2 className="h-12 w-12 text-muted-foreground" />
+                      <h2 className="mt-4 text-xl font-semibold">No offers yet</h2>
+                      <p className="mt-2 text-center text-muted-foreground">
+                        When you get hired, it will appear here. Keep applying!
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  applications
+                    .filter((app) => app.status === "hired")
+                    .map((app) => (
+                      <Card key={app.id} className="overflow-hidden border-emerald-500/20 bg-emerald-500/5">
+                        <CardContent className="p-6">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex gap-4">
+                              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-emerald-500/10 text-emerald-600 font-bold">
+                                {app.company?.charAt(0) || "C"}
+                              </div>
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <div className="flex-1">
+                                    <h3 className="font-semibold text-foreground">{app.title}</h3>
+                                    <p className="text-sm text-muted-foreground">{app.company}</p>
+                                  </div>
+                                  <Badge className="bg-emerald-500/10 text-emerald-700">🎉 Hired!</Badge>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                                  <p className="text-sm font-medium text-emerald-700">Congratulations on your new role!</p>
+                                </div>
+                              </div>
+                            </div>
+                            <Link href={`/applicant/jobs/${app.jobId}`}>
+                              <Button variant="outline" size="sm">View Job</Button>
+                            </Link>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
+            </TabsContent>
+          </Tabs>
+        </div>
       )}
     </div>
   )

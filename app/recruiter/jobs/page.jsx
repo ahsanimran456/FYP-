@@ -28,7 +28,7 @@ import {
   RefreshCw,
   AlertTriangle,
 } from "lucide-react"
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore"
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, onSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { getCurrentUser } from "@/lib/auth"
 
@@ -48,89 +48,91 @@ export default function JobsPage() {
   // Status change state
   const [statusChangingJobId, setStatusChangingJobId] = useState(null)
 
-  // Fetch jobs from Firestore
-  const fetchJobs = async (uid) => {
-    try {
-      setIsLoading(true)
+  // Process job document into job object
+  const processJobDoc = (docSnapshot) => {
+    const data = docSnapshot.data()
+    const now = new Date()
+    
+    // Check expiry status
+    const expiryDate = data.expiryDate ? new Date(data.expiryDate) : null
+    const isExpired = expiryDate && now > expiryDate
+    
+    // Check deadline
+    const deadline = data.deadline ? new Date(data.deadline) : null
+    const deadlinePassed = deadline && now > deadline
+    
+    // Calculate days until expiry
+    let daysUntilExpiry = null
+    if (expiryDate) {
+      daysUntilExpiry = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24))
+    }
+    
+    return {
+      id: docSnapshot.id,
+      title: data.jobtitle || data.title || "Untitled Job",
+      jobtitle: data.jobtitle || data.title || "Untitled Job",
+      location: data.location || "Not specified",
+      type: data.type || "Full-time",
+      salary: data.salary || "Competitive",
+      salaryMin: data.salaryMin || null,
+      salaryMax: data.salaryMax || null,
+      status: isExpired ? "Expired" : data.status === "active" ? "Active" : data.status === "closed" ? "Closed" : data.status || "Active",
+      posted: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.postedDate)),
+      applicants: Array.isArray(data.applicants) ? data.applicants.length : 0,
+      applicantsData: Array.isArray(data.applicants) ? data.applicants : [],
+      newApplicants: 0,
+      views: data.views || 0,
+      filled: data.status === "closed" && data.filled,
+      department: data.department || "General",
+      companyName: data.companyName || "",
+      description: data.description || "",
+      responsibilities: data.responsibilities || [],
+      requirements: data.requirements || [],
+      skills: data.skills || [],
+      benefits: data.benefits || "",
+      experience: data.experience || "",
+      positions: data.positions || 1,
+      deadline: data.deadline || null,
+      deadlinePassed: deadlinePassed,
+      isExpired: isExpired,
+      daysUntilExpiry: daysUntilExpiry,
+      expiryDate: data.expiryDate || null,
+      applicationEmail: data.applicationEmail || "",
+      createdAt: data.createdAt?.toDate?.() || new Date(data.postedDate),
+    }
+  }
+
+  // Setup real-time listener for jobs
+  const setupJobsListener = (uid) => {
+    setIsLoading(true)
+    
+    const jobsQuery = query(
+      collection(db, "jobs"),
+      where("recruiterId", "==", uid)
+    )
+    
+    // Real-time listener
+    const unsubscribe = onSnapshot(jobsQuery, (snapshot) => {
+      const fetchedJobs = snapshot.docs.map(processJobDoc)
       
-      // Query jobs collection where recruiterId matches current user
-      const jobsQuery = query(
-        collection(db, "jobs"),
-        where("recruiterId", "==", uid)
-      )
-      
-      const querySnapshot = await getDocs(jobsQuery)
-      
-      const now = new Date()
-      
-      const fetchedJobs = querySnapshot.docs.map((doc) => {
-        const data = doc.data()
-        
-        // Check expiry status
-        const expiryDate = data.expiryDate ? new Date(data.expiryDate) : null
-        const isExpired = expiryDate && now > expiryDate
-        
-        // Check deadline
-        const deadline = data.deadline ? new Date(data.deadline) : null
-        const deadlinePassed = deadline && now > deadline
-        
-        // Calculate days until expiry
-        let daysUntilExpiry = null
-        if (expiryDate) {
-          daysUntilExpiry = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24))
-        }
-        
-        return {
-          id: doc.id,
-          title: data.jobtitle || data.title || "Untitled Job",
-          jobtitle: data.jobtitle || data.title || "Untitled Job",
-          location: data.location || "Not specified",
-          type: data.type || "Full-time",
-          salary: data.salary || "Competitive",
-          salaryMin: data.salaryMin || null,
-          salaryMax: data.salaryMax || null,
-          status: isExpired ? "Expired" : data.status === "active" ? "Active" : data.status === "closed" ? "Closed" : data.status || "Active",
-          posted: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.postedDate)),
-          applicants: Array.isArray(data.applicants) ? data.applicants.length : 0,
-          applicantsData: Array.isArray(data.applicants) ? data.applicants : [],
-          newApplicants: 0,
-          views: data.views || 0,
-          filled: data.status === "closed" && data.filled,
-          department: data.department || "General",
-          companyName: data.companyName || "",
-          description: data.description || "",
-          responsibilities: data.responsibilities || [],
-          requirements: data.requirements || [],
-          skills: data.skills || [],
-          benefits: data.benefits || "",
-          experience: data.experience || "",
-          positions: data.positions || 1,
-          deadline: data.deadline || null,
-          deadlinePassed: deadlinePassed,
-          isExpired: isExpired,
-          daysUntilExpiry: daysUntilExpiry,
-          expiryDate: data.expiryDate || null,
-          applicationEmail: data.applicationEmail || "",
-          createdAt: data.createdAt?.toDate?.() || new Date(data.postedDate),
-        }
-      })
-      
-      // Sort by createdAt descending (newest first) - client side sorting
+      // Sort by createdAt descending (newest first)
       fetchedJobs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       
-      console.log("✅ Fetched jobs from Firestore:", fetchedJobs.length)
+      console.log("✅ Real-time jobs update:", fetchedJobs.length, "jobs")
       setJobs(fetchedJobs)
-    } catch (error) {
-      console.error("❌ Error fetching jobs:", error)
+      setIsLoading(false)
+    }, (error) => {
+      console.error("❌ Error in jobs listener:", error)
       setJobs([])
+      setIsLoading(false)
       toast({
         title: "Error loading jobs",
         description: error.message || "Failed to fetch jobs. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
-    }
+    })
+    
+    return unsubscribe
   }
 
   // Get time ago string
@@ -153,34 +155,39 @@ export default function JobsPage() {
     return `${months} month${months > 1 ? 's' : ''} ago`
   }
 
-  // Load user and fetch jobs on mount
+  // Load user and setup real-time listener on mount
   useEffect(() => {
-    const loadJobs = async () => {
-      const currentUser = getCurrentUser()
-      let uid = currentUser?.uid
-      
-      if (!uid) {
-        // Fallback to localStorage
-        uid = localStorage.getItem("userId")
-      }
-      
-      if (uid) {
-        setRecruiterId(uid)
-        await fetchJobs(uid)
-      } else {
-        setIsLoading(false)
-        toast({
-          title: "Not authenticated",
-          description: "Please login to view your jobs.",
-          variant: "destructive",
-        })
-      }
+    let unsubscribe = null
+    
+    const currentUser = getCurrentUser()
+    let uid = currentUser?.uid
+    
+    if (!uid) {
+      // Fallback to localStorage
+      uid = localStorage.getItem("userId")
     }
     
-    loadJobs()
+    if (uid) {
+      setRecruiterId(uid)
+      unsubscribe = setupJobsListener(uid)
+    } else {
+      setIsLoading(false)
+      toast({
+        title: "Not authenticated",
+        description: "Please login to view your jobs.",
+        variant: "destructive",
+      })
+    }
+    
+    // Cleanup listener on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe()
+      }
+    }
   }, [])
 
-  // Handle job status change (close/reopen)
+  // Handle job status change (close/reopen) - real-time listener will update UI
   const handleStatusChange = async (jobId, newStatus) => {
     setStatusChangingJobId(jobId)
     
@@ -190,12 +197,7 @@ export default function JobsPage() {
         updatedAt: serverTimestamp(),
       })
       
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === jobId 
-          ? { ...job, status: newStatus === "active" ? "Active" : "Closed" }
-          : job
-      ))
+      // Note: Local state update not needed - real-time listener handles it
       
       toast({
         title: newStatus === "active" ? "Job Reopened" : "Job Closed",

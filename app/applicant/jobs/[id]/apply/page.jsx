@@ -27,7 +27,7 @@ import {
   AlertCircle,
   ExternalLink,
 } from "lucide-react"
-import { doc, getDoc, updateDoc, arrayUnion } from "firebase/firestore"
+import { doc, getDoc, updateDoc, arrayUnion, serverTimestamp } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { uploadResume } from "@/lib/supabase"
 

@@ -38,7 +38,7 @@ import {
   Brain,
   Calendar,
 } from "lucide-react"
-import { collection, query, where, getDocs, doc, updateDoc, getDoc } from "firebase/firestore"
+import { collection, query, where, getDocs, doc, updateDoc, getDoc, onSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 // Constants
@@ -267,102 +267,109 @@ export default function CandidatesPage() {
     })
   }
 
-  // Fetch all candidates from recruiter's jobs
-  const fetchCandidates = async () => {
-    try {
-      setIsLoading(true)
-      const userId = localStorage.getItem("userId")
+  // Process job snapshot data into candidates
+  const processJobsSnapshot = (snapshot, cachedScores) => {
+    const jobsList = []
+    const jobsFullData = {}
+    const allCandidates = []
+    
+    snapshot.docs.forEach((jobDoc) => {
+      const jobData = jobDoc.data()
+      const jobTitle = jobData.jobtitle || jobData.title || "Untitled Job"
       
-      if (!userId) {
-        setIsLoading(false)
-        return
-      }
-
-      // Load cached scores first
-      const cachedScores = loadCachedScores()
-
-      // Fetch all jobs for this recruiter
-      const jobsQuery = query(
-        collection(db, "jobs"),
-        where("recruiterId", "==", userId)
-      )
-      
-      const jobsSnapshot = await getDocs(jobsQuery)
-      const jobsList = []
-      const jobsFullData = {}
-      const allCandidates = []
-      
-      jobsSnapshot.docs.forEach((jobDoc) => {
-        const jobData = jobDoc.data()
-        const jobTitle = jobData.jobtitle || jobData.title || "Untitled Job"
-        
-        jobsList.push({
-          id: jobDoc.id,
-          title: jobTitle,
-        })
-        
-        // Store full job data for AI scoring
-        jobsFullData[jobDoc.id] = {
-          id: jobDoc.id,
-          title: jobTitle,
-          skills: jobData.skills || [],
-          experience: jobData.experience || "",
-          location: jobData.location || "",
-          requirements: jobData.requirements || [],
-          description: jobData.description || "",
-        }
-        
-        // Get applicants from this job
-        const applicantsArray = Array.isArray(jobData.applicants) ? jobData.applicants : []
-        
-        applicantsArray.forEach((applicant) => {
-          if (!applicant.applicantId) return
-          
-          const cacheKey = `${jobDoc.id}_${applicant.applicantId}`
-          
-          // Check if score exists in Firestore (from previous scoring)
-          if (applicant.aiScore !== undefined && !cachedScores[cacheKey]) {
-            cachedScores[cacheKey] = {
-              score: applicant.aiScore,
-              reason: applicant.aiScoreReason || "",
-              timestamp: new Date(applicant.aiScoredAt || Date.now()).getTime(),
-            }
-          }
-          
-          allCandidates.push({
-            id: `${jobDoc.id}_${applicant.applicantId}`,
-            applicantId: applicant.applicantId,
-            jobId: jobDoc.id,
-            jobTitle: jobTitle,
-            name: applicant.applicantName || "Unknown",
-            email: applicant.applicantEmail || "",
-            phone: applicant.applicantPhone || "",
-            avatar: applicant.applicantAvatar || "",
-            position: jobTitle,
-            currentTitle: applicant.currentTitle || "",
-            currentCompany: applicant.currentCompany || "",
-            experience: applicant.yearsOfExperience || "Not specified",
-            location: applicant.applicantLocation || "Not specified",
-            education: applicant.education || "Not specified",
-            skills: applicant.skills || [],
-            status: applicant.status || "applied",
-            appliedDate: applicant.appliedAt || new Date().toISOString(),
-            coverLetter: applicant.coverLetter || "",
-            resumeUrl: applicant.resumeUrl || "",
-            resumeName: applicant.resumeName || "",
-            linkedIn: applicant.linkedIn || "",
-            portfolio: applicant.portfolio || "",
-            github: applicant.github || "",
-            expectedSalary: applicant.expectedSalary || null,
-            availability: applicant.availability || "",
-            rating: applicant.rating || 0,
-          })
-        })
+      jobsList.push({
+        id: jobDoc.id,
+        title: jobTitle,
       })
       
+      // Store full job data for AI scoring
+      jobsFullData[jobDoc.id] = {
+        id: jobDoc.id,
+        title: jobTitle,
+        skills: jobData.skills || [],
+        experience: jobData.experience || "",
+        location: jobData.location || "",
+        requirements: jobData.requirements || [],
+        description: jobData.description || "",
+      }
+      
+      // Get applicants from this job
+      const applicantsArray = Array.isArray(jobData.applicants) ? jobData.applicants : []
+      
+      applicantsArray.forEach((applicant) => {
+        if (!applicant.applicantId) return
+        
+        const cacheKey = `${jobDoc.id}_${applicant.applicantId}`
+        
+        // Check if score exists in Firestore (from previous scoring)
+        if (applicant.aiScore !== undefined && !cachedScores[cacheKey]) {
+          cachedScores[cacheKey] = {
+            score: applicant.aiScore,
+            reason: applicant.aiScoreReason || "",
+            timestamp: new Date(applicant.aiScoredAt || Date.now()).getTime(),
+          }
+        }
+        
+        allCandidates.push({
+          id: `${jobDoc.id}_${applicant.applicantId}`,
+          applicantId: applicant.applicantId,
+          jobId: jobDoc.id,
+          jobTitle: jobTitle,
+          name: applicant.applicantName || "Unknown",
+          email: applicant.applicantEmail || "",
+          phone: applicant.applicantPhone || "",
+          avatar: applicant.applicantAvatar || "",
+          position: jobTitle,
+          currentTitle: applicant.currentTitle || "",
+          currentCompany: applicant.currentCompany || "",
+          experience: applicant.yearsOfExperience || "Not specified",
+          location: applicant.applicantLocation || "Not specified",
+          education: applicant.education || "Not specified",
+          skills: applicant.skills || [],
+          status: applicant.status || "applied",
+          appliedDate: applicant.appliedAt || new Date().toISOString(),
+          coverLetter: applicant.coverLetter || "",
+          resumeUrl: applicant.resumeUrl || "",
+          resumeName: applicant.resumeName || "",
+          linkedIn: applicant.linkedIn || "",
+          portfolio: applicant.portfolio || "",
+          github: applicant.github || "",
+          expectedSalary: applicant.expectedSalary || null,
+          availability: applicant.availability || "",
+          rating: applicant.rating || 0,
+        })
+      })
+    })
+    
+    return { jobsList, jobsFullData, allCandidates, cachedScores }
+  }
+
+  // Setup real-time listener for candidates
+  const setupCandidatesListener = () => {
+    const userId = localStorage.getItem("userId")
+    
+    if (!userId) {
+      setIsLoading(false)
+      return null
+    }
+
+    setIsLoading(true)
+    
+    // Load cached scores first
+    const cachedScores = loadCachedScores()
+
+    // Real-time listener for all jobs
+    const jobsQuery = query(
+      collection(db, "jobs"),
+      where("recruiterId", "==", userId)
+    )
+    
+    const unsubscribe = onSnapshot(jobsQuery, (snapshot) => {
+      const { jobsList, jobsFullData, allCandidates, cachedScores: updatedScores } = processJobsSnapshot(snapshot, cachedScores)
+      
       // Update cached scores with Firestore data
-      setAiScores(cachedScores)
-      saveCachedScores(cachedScores)
+      setAiScores(updatedScores)
+      saveCachedScores(updatedScores)
       
       // Sort by applied date (newest first)
       allCandidates.sort((a, b) => new Date(b.appliedDate) - new Date(a.appliedDate))
@@ -373,21 +380,31 @@ export default function CandidatesPage() {
       
       // Check if there's a job filter from URL
       const jobParam = searchParams.get("job")
-      if (jobParam) {
+      if (jobParam && selectedJob === "all") {
         setSelectedJob(jobParam)
       }
       
-      console.log("✅ Fetched", allCandidates.length, "candidates from", jobsList.length, "jobs")
-    } catch (error) {
-      console.error("❌ Error fetching candidates:", error)
+      console.log("✅ Real-time candidates update:", allCandidates.length, "candidates from", jobsList.length, "jobs")
+      setIsLoading(false)
+    }, (error) => {
+      console.error("❌ Error in candidates listener:", error)
       toast({
         title: "Error loading candidates",
         description: "Failed to load candidates. Please try again.",
         variant: "destructive",
       })
-    } finally {
       setIsLoading(false)
-    }
+    })
+    
+    return unsubscribe
+  }
+
+  // Legacy fetch function for manual refresh
+  const fetchCandidates = async () => {
+    // This will be handled by real-time listener
+    // Just trigger a re-render by resetting loading
+    setIsLoading(true)
+    setTimeout(() => setIsLoading(false), 500)
   }
 
   // Update applicant status
@@ -550,7 +567,14 @@ export default function CandidatesPage() {
   }
 
   useEffect(() => {
-    fetchCandidates()
+    const unsubscribe = setupCandidatesListener()
+    
+    // Cleanup listener on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe()
+      }
+    }
   }, [searchParams])
 
   // Reset page when filters change

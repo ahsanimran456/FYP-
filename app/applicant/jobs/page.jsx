@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { Search, MapPin, Clock, Briefcase, Building2, Heart, X, Loader2, RefreshCw } from "lucide-react"
+import { Search, MapPin, Clock, Briefcase, Building2, X, Loader2, RefreshCw, Eye } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { collection, query, where, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from "firebase/firestore"
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 export default function JobsPage() {
@@ -22,7 +22,6 @@ export default function JobsPage() {
     experience: "all",
     salary: "all",
   })
-  const [savedJobs, setSavedJobs] = useState([])
   const [appliedJobs, setAppliedJobs] = useState([])
   const [jobs, setJobs] = useState([])
   const [filteredJobs, setFilteredJobs] = useState([])
@@ -37,15 +36,6 @@ export default function JobsPage() {
       // Get user ID from localStorage
       const uid = localStorage.getItem("userId")
       setUserId(uid)
-      
-      // Fetch user's saved jobs if logged in
-      if (uid) {
-        const userDoc = await getDoc(doc(db, "users", uid))
-        if (userDoc.exists()) {
-          const userData = userDoc.data()
-          setSavedJobs(userData.savedJobs || [])
-        }
-      }
       
       // Fetch all active jobs
       const jobsQuery = query(
@@ -62,7 +52,7 @@ export default function JobsPage() {
           const data = docSnapshot.data()
           const applicantsArray = Array.isArray(data.applicants) ? data.applicants : []
           
-          // Check if job is expired (2 weeks old)
+          // Check if job is expired
           const expiryDate = data.expiryDate ? new Date(data.expiryDate) : null
           const isExpired = expiryDate && now > expiryDate
           
@@ -88,6 +78,7 @@ export default function JobsPage() {
             experience: data.experience || "mid",
             posted: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.postedDate)),
             applicants: applicantsArray.length,
+            views: data.views || 0,
             skills: data.skills || [],
             description: data.description || "",
             department: data.department || "General",
@@ -97,7 +88,7 @@ export default function JobsPage() {
             deadlinePassed: deadlinePassed,
           }
         })
-        .filter(job => job !== null) // Remove expired jobs
+        .filter(job => job !== null)
       
       setAppliedJobs(appliedJobIds)
       
@@ -197,52 +188,6 @@ export default function JobsPage() {
   useEffect(() => {
     fetchJobs()
   }, [])
-
-  // Toggle save job
-  const toggleSaveJob = async (jobId) => {
-    if (!userId) {
-      toast({
-        title: "Login Required",
-        description: "Please login to save jobs.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const isSaved = savedJobs.includes(jobId)
-      const userRef = doc(db, "users", userId)
-      
-      if (isSaved) {
-        // Remove from saved
-        await updateDoc(userRef, {
-          savedJobs: arrayRemove(jobId)
-        })
-        setSavedJobs(savedJobs.filter((id) => id !== jobId))
-        toast({
-          title: "Job removed from saved",
-          description: "You can find saved jobs in your profile.",
-        })
-      } else {
-        // Add to saved
-        await updateDoc(userRef, {
-          savedJobs: arrayUnion(jobId)
-        })
-        setSavedJobs([...savedJobs, jobId])
-        toast({
-          title: "Job saved!",
-          description: "You can find this job in your saved jobs.",
-        })
-      }
-    } catch (error) {
-      console.error("Error toggling save:", error)
-      toast({
-        title: "Error",
-        description: "Failed to update saved jobs.",
-        variant: "destructive",
-      })
-    }
-  }
 
   // Get experience level label
   const getExperienceLabel = (exp) => {
@@ -445,14 +390,6 @@ export default function JobsPage() {
                     <p className="text-sm text-muted-foreground">{job.company}</p>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => toggleSaveJob(job.id)}
-                  className={savedJobs.includes(job.id) ? "text-red-500" : ""}
-                >
-                  <Heart className={`h-5 w-5 ${savedJobs.includes(job.id) ? "fill-current" : ""}`} />
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -515,8 +452,15 @@ export default function JobsPage() {
                 )}
               </div>
 
-              {/* Applicants Count */}
-              <p className="text-center text-xs text-muted-foreground">{job.applicants} applicants</p>
+              {/* Stats */}
+              <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Eye className="h-3 w-3" />
+                  {job.views} views
+                </span>
+                <span>•</span>
+                <span>{job.applicants} applicants</span>
+              </div>
             </CardContent>
           </Card>
         ))}

@@ -41,12 +41,20 @@ export const uploadFile = async (
 
     console.log('✅ File uploaded:', data.path)
 
-    // Get the public URL
+    // Get the public URL - manually construct to ensure /public is included
     const { data: urlData } = supabase.storage
       .from(bucket)
       .getPublicUrl(filePath)
 
-    return urlData.publicUrl
+    // Ensure the URL includes /public/ in the path
+    let publicUrl = urlData.publicUrl
+    if (publicUrl && !publicUrl.includes('/object/public/')) {
+      // Fix the URL by adding /public/ if missing
+      publicUrl = publicUrl.replace('/object/', '/object/public/')
+    }
+
+    console.log('✅ Public URL:', publicUrl)
+    return publicUrl
   } catch (error: any) {
     console.error('❌ Upload error:', error.message)
     throw new Error(error.message || 'Failed to upload file')

@@ -13,9 +13,7 @@ import {
   MapPin,
   Clock,
   Users,
-  Heart,
   Share2,
-  Flag,
   CheckCircle2,
   Award,
   Loader2,
@@ -27,15 +25,15 @@ import {
   Upload,
   ExternalLink,
   User,
+  Eye,
 } from "lucide-react"
-import { doc, getDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp } from "firebase/firestore"
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, increment } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { uploadResume } from "@/lib/supabase"
 
 export default function JobDetailPage() {
   const params = useParams()
   const { toast } = useToast()
-  const [isSaved, setIsSaved] = useState(false)
   const [job, setJob] = useState(null)
   const [similarJobs, setSimilarJobs] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -91,18 +89,31 @@ export default function JobDetailPage() {
       if (userDoc.exists()) {
         const data = userDoc.data()
         setUserData(data)
-        
-        // Check if this job is saved
-        if (data.savedJobs && data.savedJobs.includes(params.id)) {
-          setIsSaved(true)
-        }
-        
         return data
       }
       return null
     } catch (err) {
       console.error("Error fetching user data:", err)
       return null
+    }
+  }
+
+  // Increment view count
+  const incrementViewCount = async (jobId) => {
+    try {
+      const viewedKey = `job_viewed_${jobId}`
+      const alreadyViewed = sessionStorage.getItem(viewedKey)
+      
+      if (!alreadyViewed) {
+        const jobRef = doc(db, "jobs", jobId)
+        await updateDoc(jobRef, {
+          views: increment(1)
+        })
+        sessionStorage.setItem(viewedKey, "true")
+        console.log("✅ View count incremented for job:", jobId)
+      }
+    } catch (error) {
+      console.error("Error incrementing view count:", error)
     }
   }
 
@@ -180,6 +191,9 @@ export default function JobDetailPage() {
         return
       }
       
+      // Increment view count
+      await incrementViewCount(params.id)
+      
       // Check if user has already applied
       const applicantsArray = Array.isArray(data.applicants) ? data.applicants : []
       const currentUserId = localStorage.getItem("userId")
@@ -200,7 +214,7 @@ export default function JobDetailPage() {
         experience: getExperienceLabel(data.experience),
         posted: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.postedDate)),
         applicants: applicantsArray.length,
-        views: data.views || 0,
+        views: (data.views || 0) + 1, // Show updated count
         department: data.department || "General",
         description: data.description || "No description provided.",
         responsibilities: data.responsibilities || [],
@@ -215,7 +229,7 @@ export default function JobDetailPage() {
       
       setJob(jobData)
       
-      // Fetch similar jobs (same department or type, excluding current job)
+      // Fetch similar jobs
       try {
         const similarQuery = query(
           collection(db, "jobs"),
@@ -258,49 +272,6 @@ export default function JobDetailPage() {
       fetchJob()
     }
   }, [params.id])
-
-  // Handle save job
-  const handleSaveJob = async () => {
-    if (!userId) {
-      toast({
-        title: "Login Required",
-        description: "Please login to save jobs.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const userRef = doc(db, "users", userId)
-      const currentSavedJobs = userData?.savedJobs || []
-      
-      let newSavedJobs
-      if (isSaved) {
-        // Remove from saved
-        newSavedJobs = currentSavedJobs.filter(id => id !== params.id)
-      } else {
-        // Add to saved
-        newSavedJobs = [...currentSavedJobs, params.id]
-      }
-      
-      await updateDoc(userRef, { savedJobs: newSavedJobs })
-      
-      setUserData(prev => ({ ...prev, savedJobs: newSavedJobs }))
-      setIsSaved(!isSaved)
-      
-      toast({
-        title: isSaved ? "Job removed from saved" : "Job saved!",
-        description: isSaved ? "You can find saved jobs in your profile." : "You can find this job in your saved jobs.",
-      })
-    } catch (error) {
-      console.error("Error saving job:", error)
-      toast({
-        title: "Error",
-        description: "Failed to save job. Please try again.",
-        variant: "destructive",
-      })
-    }
-  }
 
   // Handle share
   const handleShare = () => {
@@ -391,22 +362,9 @@ export default function JobDetailPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleSaveJob}
-                  className={isSaved ? "text-red-500" : ""}
-                >
-                  <Heart className={`h-5 w-5 ${isSaved ? "fill-current" : ""}`} />
-                </Button>
-                <Button variant="outline" size="icon" onClick={handleShare}>
-                  <Share2 className="h-5 w-5" />
-                </Button>
-                <Button variant="outline" size="icon">
-                  <Flag className="h-5 w-5" />
-                </Button>
-              </div>
+              <Button variant="outline" size="icon" onClick={handleShare} title="Share Job">
+                <Share2 className="h-5 w-5" />
+              </Button>
             </div>
 
             {/* Your Profile & CV Section */}
@@ -493,7 +451,7 @@ export default function JobDetailPage() {
                 </div>
               </div>
               
-              {/* User Skills Match (if user has skills) */}
+              {/* User Skills Match */}
               {userData?.skills && userData.skills.length > 0 && job.skills && job.skills.length > 0 && (
                 <div className="mt-4 pt-4 border-t">
                   <p className="text-xs text-muted-foreground mb-2">Your matching skills:</p>
@@ -549,10 +507,10 @@ export default function JobDetailPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3 rounded-lg border p-3">
-                <Clock className="h-5 w-5 text-muted-foreground" />
+                <Eye className="h-5 w-5 text-muted-foreground" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Posted</p>
-                  <p className="font-medium text-foreground">{job.posted}</p>
+                  <p className="text-sm text-muted-foreground">Views</p>
+                  <p className="font-medium text-foreground">{job.views} views</p>
                 </div>
               </div>
             </div>
@@ -686,17 +644,13 @@ export default function JobDetailPage() {
                     </Button>
                   </Link>
                 )}
-                <Button 
-                  variant="outline" 
-                  className="w-full bg-transparent"
-                  onClick={handleSaveJob}
-                >
-                  <Heart className={`mr-2 h-4 w-4 ${isSaved ? "fill-current text-red-500" : ""}`} />
-                  {isSaved ? "Saved" : "Save for later"}
-                </Button>
                 <Separator />
                 <div className="space-y-2 text-center text-sm text-muted-foreground">
                   <p>{job.applicants} people have applied</p>
+                  <p className="flex items-center justify-center gap-1">
+                    <Eye className="h-3 w-3" />
+                    {job.views} views
+                  </p>
                   {job.positions > 1 && (
                     <p className="text-xs">{job.positions} positions available</p>
                   )}
@@ -730,6 +684,11 @@ export default function JobDetailPage() {
                 <Building2 className="h-4 w-4 text-muted-foreground" />
                 <span className="text-muted-foreground">Department:</span>
                 <span className="font-medium capitalize">{job.department}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Posted:</span>
+                <span className="font-medium">{job.posted}</span>
               </div>
               {job.applicationEmail && (
                 <div className="flex items-center gap-2 text-sm">
@@ -856,116 +815,6 @@ export default function JobDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Your Profile Card */}
-          {userData && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Your Profile
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Profile Picture & Name */}
-                <div className="flex items-center gap-3 pb-2">
-                  {userData.avatarUrl ? (
-                    <img 
-                      src={userData.avatarUrl} 
-                      alt="Profile" 
-                      className="h-10 w-10 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <User className="h-5 w-5 text-primary" />
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-medium text-foreground">{userData.name || "Your Name"}</p>
-                    <p className="text-xs text-muted-foreground">{userData.professionalTitle || "Add title"}</p>
-                  </div>
-                </div>
-                
-                <Separator />
-                
-                {/* Experience Level */}
-                <div className="flex items-center gap-2 text-sm">
-                  <Award className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Experience:</span>
-                  <span className="font-medium">{getExperienceLabel(userData.experienceLevel) || "Not set"}</span>
-                </div>
-                
-                {/* Location */}
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Location:</span>
-                  <span className="font-medium">{userData.location || "Not set"}</span>
-                </div>
-                
-                {/* Email */}
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Email:</span>
-                  <span className="font-medium truncate text-xs">{userData.email || "Not set"}</span>
-                </div>
-                
-                {/* Phone */}
-                {userData.phone && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Briefcase className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Phone:</span>
-                    <span className="font-medium">{userData.phone}</span>
-                  </div>
-                )}
-                
-                {/* CV Status */}
-                <div className="flex items-center gap-2 text-sm">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Resume:</span>
-                  {userData.resumeUrl ? (
-                    <span className="font-medium text-green-600">✓ Uploaded</span>
-                  ) : (
-                    <span className="font-medium text-orange-600">Not uploaded</span>
-                  )}
-                </div>
-                
-                {/* Skills */}
-                {userData.skills && userData.skills.length > 0 && (
-                  <div className="pt-2">
-                    <p className="text-xs text-muted-foreground mb-2">Your Skills ({userData.skills.length}):</p>
-                    <div className="flex flex-wrap gap-1">
-                      {userData.skills.slice(0, 5).map((skill) => (
-                        <Badge key={skill} variant="secondary" className="text-xs">
-                          {skill}
-                        </Badge>
-                      ))}
-                      {userData.skills.length > 5 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{userData.skills.length - 5}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Work Experience Count */}
-                {userData.experiences && userData.experiences.length > 0 && (
-                  <div className="flex items-center gap-2 text-sm pt-1">
-                    <Briefcase className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Work Experience:</span>
-                    <span className="font-medium">{userData.experiences.length} position(s)</span>
-                  </div>
-                )}
-                
-                <Separator className="my-2" />
-                <Link href="/applicant/profile">
-                  <Button variant="outline" size="sm" className="w-full">
-                    Edit Profile
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-          )}
-          
           {/* Not Logged In Card */}
           {!userData && !isLoading && (
             <Card>
