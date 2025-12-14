@@ -1,0 +1,18 @@
+# TalentHub - AI-Powered Recruitment Platform
+# https://talentedhubcom.vercel.app
+
+User-agent: *
+Allow: /
+
+# Disallow private/authenticated pages from being indexed
+Disallow: /recruiter/
+Disallow: /applicant/
+Disallow: /api/
+
+# Allow public pages
+Allow: /
+Allow: /signup
+Allow: /login
+
+# Sitemap
+Sitemap: https://talentedhubcom.vercel.app/sitemap.xml
