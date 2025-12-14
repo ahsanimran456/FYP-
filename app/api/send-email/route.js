@@ -242,7 +242,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
               </div>
               
               <div style="text-align: center; margin: 25px 0;">
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/applicant/applications" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #10b981, #14b8a6); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Offer Letter</a>
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://talentedhubcom.vercel.app'}/applicant/applications" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #10b981, #14b8a6); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Offer Letter</a>
               </div>
               
               <p style="font-size: 16px;">We look forward to welcoming you to the ${companyName} team!</p>
@@ -286,7 +286,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
               </div>
               
               <div style="text-align: center; margin: 25px 0;">
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/recruiter/candidates" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #10b981, #059669); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Candidate</a>
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://talentedhubcom.vercel.app'}/recruiter/candidates" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #10b981, #059669); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Candidate</a>
               </div>
               
               <p style="font-size: 16px;">Congratulations on your new hire!</p>
@@ -328,7 +328,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
               </div>
               
               <div style="text-align: center; margin: 25px 0;">
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/recruiter/candidates" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Other Candidates</a>
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://talentedhubcom.vercel.app'}/recruiter/candidates" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Other Candidates</a>
               </div>
               
               <p style="font-size: 16px;">Best regards,<br/><strong>TalentHub Team</strong></p>

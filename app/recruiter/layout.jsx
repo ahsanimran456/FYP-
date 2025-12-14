@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { doc, onSnapshot, collection, query, where, orderBy, limit } from "firebase/firestore"
@@ -212,16 +213,21 @@ export default function RecruiterLayout({ children }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 transform border-r bg-card transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 w-64 transform border-r border-border bg-card transition-all duration-300 ease-in-out lg:relative lg:translate-x-0",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         <div className="flex h-full flex-col">
           {/* Logo */}
-          <div className="flex h-16 items-center justify-between border-b px-6">
-            <Link href="/recruiter/dashboard" className="flex items-center gap-2">
-              <Building2 className="h-6 w-6 text-primary" />
-              <span className="text-lg font-bold text-foreground">TalentHub</span>
+          <div className="flex h-16 items-center justify-between px-5 border-b border-border">
+            <Link href="/recruiter/dashboard" className="flex items-center gap-2.5 group">
+              <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center shadow-md shadow-primary/20 group-hover:shadow-lg group-hover:shadow-primary/30 transition-all duration-200">
+                <Building2 className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <span className="text-lg font-bold text-foreground">TalentHub</span>
+                <p className="text-[10px] text-muted-foreground font-medium -mt-0.5">Recruiter</p>
+              </div>
             </Link>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsSidebarOpen(false)}>
               <X className="h-5 w-5" />
@@ -229,32 +235,37 @@ export default function RecruiterLayout({ children }) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {navItems.map((item) => {
-              const Icon = item.icon
-              const isActive = pathname === item.href
-              return (
-                <Link key={item.href} href={item.href}>
-                  <button
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted",
-                    )}
-                  >
-                    <Icon className="h-5 w-5" />
-                    {item.label}
-                  </button>
-                </Link>
-              )
-            })}
+          <nav className="flex-1 overflow-y-auto px-3 py-4">
+            <div className="space-y-1">
+              {navItems.map((item) => {
+                const Icon = item.icon
+                const isActive = pathname === item.href
+                return (
+                  <Link key={item.href} href={item.href}>
+                    <button
+                      className={cn(
+                        "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                        isActive
+                          ? "bg-primary text-white shadow-md shadow-primary/20"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      {isActive && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full -ml-3"></span>
+                      )}
+                      <Icon className={cn("h-5 w-5 transition-colors", isActive ? "text-white" : "text-muted-foreground group-hover:text-primary")} />
+                      <span>{item.label}</span>
+                    </button>
+                  </Link>
+                )
+              })}
+            </div>
           </nav>
 
           {/* Quick Action */}
-          <div className="border-t p-4">
+          <div className="px-3 pb-3">
             <Link href="/recruiter/jobs/new">
-              <Button className="w-full">
+              <Button className="w-full shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all duration-200">
                 <Plus className="mr-2 h-4 w-4" />
                 Post New Job
               </Button>
@@ -262,20 +273,21 @@ export default function RecruiterLayout({ children }) {
           </div>
 
           {/* User Profile */}
-          <div className="border-t p-4">
+          <div className="border-t border-border p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex w-full items-center gap-3 rounded-lg p-2 transition-colors hover:bg-muted">
-                  <Avatar className="h-10 w-10 border-2 border-primary/20">
+                <button className="flex w-full items-center gap-3 rounded-lg p-2 transition-all duration-200 hover:bg-muted group">
+                  <Avatar className="h-10 w-10 ring-2 ring-primary/20">
                     <AvatarImage src={userAvatar || ""} />
-                    <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white">
+                    <AvatarFallback className="bg-primary text-white font-semibold">
                       {userName.substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 text-left">
-                    <p className="text-sm font-medium text-foreground">{userName}</p>
+                    <p className="text-sm font-semibold text-foreground">{userName}</p>
                     <p className="text-xs text-muted-foreground">Recruiter</p>
                   </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

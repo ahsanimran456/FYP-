@@ -10,19 +10,19 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default:
-          'border-transparent bg-primary text-primary-foreground shadow-sm [a&]:hover:bg-primary/90 [a&]:hover:shadow-md',
+          'border-transparent bg-primary text-white hover:text-white shadow-sm [a&]:hover:bg-primary/90 [a&]:hover:shadow-md',
         secondary:
           'border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90',
         destructive:
-          'border-transparent bg-destructive text-white shadow-sm [a&]:hover:bg-destructive/90 [a&]:hover:shadow-md focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/80',
+          'border-transparent bg-destructive text-white hover:text-white shadow-sm [a&]:hover:bg-destructive/90 [a&]:hover:shadow-md focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/80',
         outline:
-          'text-foreground border-border [a&]:hover:bg-muted [a&]:hover:text-foreground [a&]:hover:border-primary/50',
+          'text-foreground border-border [a&]:hover:bg-muted [a&]:hover:border-primary/50',
         success:
-          'border-transparent bg-emerald-500 text-white shadow-sm [a&]:hover:bg-emerald-600',
+          'border-transparent bg-emerald-500 text-white hover:text-white shadow-sm [a&]:hover:bg-emerald-600',
         warning:
-          'border-transparent bg-amber-500 text-white shadow-sm [a&]:hover:bg-amber-600',
+          'border-transparent bg-amber-500 text-white hover:text-white shadow-sm [a&]:hover:bg-amber-600',
         info:
-          'border-transparent bg-blue-500 text-white shadow-sm [a&]:hover:bg-blue-600',
+          'border-transparent bg-blue-500 text-white hover:text-white shadow-sm [a&]:hover:bg-blue-600',
       },
     },
     defaultVariants: {
