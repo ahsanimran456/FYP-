@@ -187,9 +187,13 @@ export default function CandidateDetailPage() {
     }
   }, [jobId, applicantId, router, toast])
 
-  // Send email notification
+  // Send email notification with Reply-To set to recruiter's email
   const sendEmail = async (type, candidateData, jobTitle, companyName, interviewDetails = null) => {
     try {
+      // Get recruiter's email from localStorage (set during login)
+      const recruiterEmail = localStorage.getItem("userEmail") || localStorage.getItem("email")
+      const recruiterName = localStorage.getItem("userName") || localStorage.getItem("name")
+      
       const response = await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -200,11 +204,17 @@ export default function CandidateDetailPage() {
           jobTitle,
           companyName: companyName || localStorage.getItem("companyName") || "Company",
           interviewDetails,
+          // Include recruiter's email so replies go to them
+          recruiterEmail,
+          recruiterName,
         }),
       })
       const data = await response.json()
       if (data.success) {
         console.log("Email sent:", data.message)
+        if (data.replyTo) {
+          console.log("Reply-To set to:", data.replyTo)
+        }
       }
     } catch (error) {
       console.error("Error sending email:", error)

@@ -256,16 +256,16 @@ export default function RecruiterDashboard() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Welcome Section */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Recruiter Dashboard</h1>
-          <p className="mt-2 text-muted-foreground">Welcome back! Here&apos;s an overview of your hiring activities.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Recruiter Dashboard</h1>
+          <p className="text-muted-foreground">Welcome back! Here&apos;s an overview of your hiring activities.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <Link href="/recruiter/jobs/new">
-            <Button size="lg" className="gap-2">
+            <Button size="lg" className="gap-2 shadow-lg hover:shadow-xl transition-all duration-300">
               <Plus className="h-5 w-5" />
               Create Job
             </Button>
@@ -274,23 +274,30 @@ export default function RecruiterDashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {statsData.map((stat) => {
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {statsData.map((stat, index) => {
           const Icon = stat.icon
+          const gradients = [
+            "from-blue-500 to-blue-600",
+            "from-emerald-500 to-emerald-600",
+            "from-violet-500 to-violet-600",
+            "from-amber-500 to-amber-600",
+          ]
           return (
-            <Card key={stat.label}>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
+            <Card key={stat.label} className="relative overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+              <div className={cn("absolute inset-0 bg-gradient-to-br opacity-5", gradients[index])} />
+              <CardContent className="p-6 relative">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 space-y-3">
                     <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
-                    <p className="mt-2 text-3xl font-bold text-foreground">{stat.value}</p>
-                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      <ArrowUpRight className="h-3 w-3 text-green-600" />
+                    <p className="text-4xl font-bold text-foreground tracking-tight">{stat.value}</p>
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+                      <ArrowUpRight className="h-3.5 w-3.5" />
                       {stat.change}
                     </p>
                   </div>
-                  <div className={cn("flex h-12 w-12 items-center justify-center rounded-lg bg-muted", stat.color)}>
-                    <Icon className="h-6 w-6" />
+                  <div className={cn("flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br shadow-lg", gradients[index])}>
+                    <Icon className="h-7 w-7 text-white" />
                   </div>
                 </div>
               </CardContent>
@@ -301,16 +308,16 @@ export default function RecruiterDashboard() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Active Jobs */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
+        <Card className="lg:col-span-2 border-0 shadow-lg">
+          <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Active Job Postings</CardTitle>
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-bold">Active Job Postings</CardTitle>
                 <CardDescription>Manage your current job listings</CardDescription>
               </div>
               <div className="flex gap-2">
                 <Link href="/recruiter/jobs/new">
-                  <Button size="sm" className="gap-2">
+                  <Button size="sm" className="gap-2 shadow-md">
                     <Plus className="h-4 w-4" />
                     Create Job
                   </Button>
@@ -326,46 +333,49 @@ export default function RecruiterDashboard() {
           <CardContent>
             <div className="space-y-4">
               {activeJobs.length === 0 ? (
-                <div className="py-8 text-center">
-                  <Briefcase className="mx-auto h-10 w-10 text-muted-foreground" />
-                  <p className="mt-2 text-muted-foreground">No active jobs yet</p>
-                  <Link href="/recruiter/jobs/new" className="mt-3 inline-block">
-                    <Button size="sm">Post Your First Job</Button>
+                <div className="py-12 text-center">
+                  <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                    <Briefcase className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <p className="font-medium text-foreground">No active jobs yet</p>
+                  <p className="text-sm text-muted-foreground mt-1">Start by posting your first job</p>
+                  <Link href="/recruiter/jobs/new" className="mt-4 inline-block">
+                    <Button className="shadow-md">Post Your First Job</Button>
                   </Link>
                 </div>
               ) : (
                 activeJobs.map((job) => (
-                  <div key={job.id} className="rounded-lg border p-4">
+                  <div key={job.id} className="group rounded-xl border-2 border-transparent hover:border-primary/20 bg-muted/30 hover:bg-muted/50 p-5 transition-all duration-300">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-start justify-between">
                           <div>
                             <Link href={`/recruiter/jobs/${job.id}`}>
-                              <h4 className="font-semibold text-foreground hover:text-primary">{job.title}</h4>
+                              <h4 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">{job.title}</h4>
                             </Link>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-sm text-muted-foreground mt-0.5">
                               {job.location} • {job.type}
                             </p>
                           </div>
-                          <Badge variant="secondary">{job.status}</Badge>
+                          <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">{job.status}</Badge>
                         </div>
-                        <div className="mt-3 grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <p className="text-muted-foreground">Applicants</p>
-                            <p className="font-medium text-foreground">
+                        <div className="mt-4 grid grid-cols-3 gap-6">
+                          <div className="space-y-1">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Applicants</p>
+                            <p className="text-xl font-bold text-foreground">
                               {job.applicants}
                               {job.newApplicants > 0 && (
-                                <span className="ml-1 text-xs text-blue-600">(+{job.newApplicants} new)</span>
+                                <span className="ml-2 text-sm font-medium text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full">+{job.newApplicants}</span>
                               )}
                             </p>
                           </div>
-                          <div>
-                            <p className="text-muted-foreground">Views</p>
-                            <p className="font-medium text-foreground">{job.views}</p>
+                          <div className="space-y-1">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Views</p>
+                            <p className="text-xl font-bold text-foreground">{job.views}</p>
                           </div>
-                          <div>
-                            <p className="text-muted-foreground">Posted</p>
-                            <p className="font-medium text-foreground">{job.posted}</p>
+                          <div className="space-y-1">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Posted</p>
+                            <p className="text-sm font-medium text-foreground">{job.posted}</p>
                           </div>
                         </div>
                       </div>
@@ -378,25 +388,35 @@ export default function RecruiterDashboard() {
         </Card>
 
         {/* Upcoming Interviews */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Upcoming Interviews</CardTitle>
-            <CardDescription>Your scheduled interviews</CardDescription>
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-bold">Upcoming Interviews</CardTitle>
+                <CardDescription>Your scheduled interviews</CardDescription>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                <Calendar className="h-5 w-5 text-white" />
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {upcomingInterviews.length === 0 ? (
-                <div className="py-6 text-center">
-                  <Calendar className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <p className="mt-2 text-sm text-muted-foreground">No upcoming interviews</p>
+                <div className="py-8 text-center">
+                  <div className="mx-auto w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-3">
+                    <Calendar className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <p className="font-medium text-foreground">No upcoming interviews</p>
+                  <p className="text-xs text-muted-foreground mt-1">Schedule interviews from candidates page</p>
                 </div>
               ) : (
                 upcomingInterviews.map((interview) => (
-                  <div key={interview.id} className="space-y-2 rounded-lg border p-3">
-                    <div className="flex items-start gap-2">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src="/placeholder.svg?height=32&width=32" />
-                        <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white text-xs">
+                  <div key={interview.id} className="group rounded-xl bg-gradient-to-r from-purple-500/5 to-transparent hover:from-purple-500/10 border border-purple-500/10 hover:border-purple-500/20 p-4 transition-all duration-300">
+                    <div className="flex items-start gap-3">
+                      <Avatar className="h-10 w-10 border-2 border-purple-500/20">
+                        <AvatarImage src="/placeholder.svg?height=40&width=40" />
+                        <AvatarFallback className="bg-gradient-to-br from-purple-500 to-purple-600 text-white text-sm font-semibold">
                           {interview.candidate
                             .split(" ")
                             .map((n) => n[0])
@@ -404,26 +424,26 @@ export default function RecruiterDashboard() {
                             .slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex-1">
-                        <h4 className="text-sm font-semibold text-foreground">{interview.candidate}</h4>
-                        <p className="text-xs text-muted-foreground">{interview.position}</p>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-foreground truncate">{interview.candidate}</h4>
+                        <p className="text-xs text-muted-foreground truncate">{interview.position}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex items-center gap-1 text-xs text-purple-600 bg-purple-500/10 px-2 py-1 rounded-full">
+                            <Calendar className="h-3 w-3" />
+                            {interview.date}
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
+                            <Clock className="h-3 w-3" />
+                            {interview.time}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Calendar className="h-3 w-3" />
-                      {interview.date} at {interview.time}
-                    </div>
-                    <Badge variant="outline" className="text-xs capitalize">
-                      {interview.type === "google_meet" ? "Google Meet" : 
-                       interview.type === "zoom" ? "Zoom" :
-                       interview.type === "phone" ? "Phone Call" :
-                       interview.type === "onsite" ? "On-site" : interview.type}
-                    </Badge>
                   </div>
                 ))
               )}
               <Link href="/recruiter/interviews">
-                <Button variant="outline" className="w-full bg-transparent" size="sm">
+                <Button variant="outline" className="w-full mt-2 hover:bg-purple-500/5 hover:text-purple-600 hover:border-purple-500/30" size="sm">
                   View All Interviews
                 </Button>
               </Link>
@@ -433,15 +453,20 @@ export default function RecruiterDashboard() {
       </div>
 
       {/* Recent Applicants */}
-      <Card>
-        <CardHeader>
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Recent Applicants</CardTitle>
-              <CardDescription>Latest candidates who applied to your jobs</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                <Users className="h-5 w-5 text-white" />
+              </div>
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-bold">Recent Applicants</CardTitle>
+                <CardDescription>Latest candidates who applied to your jobs</CardDescription>
+              </div>
             </div>
             <Link href="/recruiter/candidates">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="hover:bg-blue-500/5 hover:text-blue-600 hover:border-blue-500/30">
                 View All
               </Button>
             </Link>
@@ -450,21 +475,23 @@ export default function RecruiterDashboard() {
         <CardContent>
           <div className="space-y-4">
             {recentApplicants.length === 0 ? (
-              <div className="py-8 text-center">
-                <Users className="mx-auto h-10 w-10 text-muted-foreground" />
-                <p className="mt-2 text-muted-foreground">No applicants yet</p>
-                <p className="text-sm text-muted-foreground">Post a job to start receiving applications</p>
+              <div className="py-12 text-center">
+                <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <Users className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <p className="font-medium text-foreground">No applicants yet</p>
+                <p className="text-sm text-muted-foreground mt-1">Post a job to start receiving applications</p>
               </div>
             ) : (
               recentApplicants.map((applicant) => (
-                <div key={applicant.id} className="flex items-center gap-4 rounded-lg border p-4">
-                  <Avatar className="h-12 w-12">
+                <div key={applicant.id} className="group flex items-center gap-4 rounded-xl border-2 border-transparent hover:border-blue-500/20 bg-muted/30 hover:bg-muted/50 p-4 transition-all duration-300">
+                  <Avatar className="h-14 w-14 border-2 border-blue-500/20">
                     {applicant.avatar ? (
                       <AvatarImage src={applicant.avatar} />
                     ) : (
-                      <AvatarImage src="/placeholder.svg?height=48&width=48" />
+                      <AvatarImage src="/placeholder.svg?height=56&width=56" />
                     )}
-                    <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white">
+                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white font-semibold">
                       {applicant.name
                         .split(" ")
                         .map((n) => n[0])
@@ -472,37 +499,33 @@ export default function RecruiterDashboard() {
                         .slice(0, 2)}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
                         <Link href={`/recruiter/candidates/${applicant.jobId}/${applicant.applicantId}`}>
-                          <h4 className="font-semibold text-foreground hover:text-primary">{applicant.name}</h4>
+                          <h4 className="font-bold text-foreground group-hover:text-blue-600 transition-colors truncate">{applicant.name}</h4>
                         </Link>
-                        <p className="text-sm text-muted-foreground">Applied for {applicant.position}</p>
+                        <p className="text-sm text-muted-foreground truncate">Applied for {applicant.position}</p>
                       </div>
-                      <Badge className={getStatusColor(applicant.status)}>{getStatusLabel(applicant.status)}</Badge>
+                      <Badge className={cn(getStatusColor(applicant.status), "shrink-0")}>{getStatusLabel(applicant.status)}</Badge>
                     </div>
-                    <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>{getExperienceLabel(applicant.experience)}</span>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+                      <span className="text-muted-foreground bg-muted px-2 py-0.5 rounded-full text-xs">{getExperienceLabel(applicant.experience)}</span>
                       {applicant.matchScore > 0 && (
-                        <>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            <TrendingUp className="h-3 w-3" />
-                            {applicant.matchScore}% AI
-                          </span>
-                        </>
+                        <span className="flex items-center gap-1 text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs font-medium">
+                          <TrendingUp className="h-3 w-3" />
+                          {applicant.matchScore}% AI Match
+                        </span>
                       )}
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 text-muted-foreground text-xs">
                         <Clock className="h-3 w-3" />
                         {applicant.appliedDate}
                       </span>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <Link href={`/recruiter/candidates/${applicant.jobId}/${applicant.applicantId}`}>
-                      <Button size="sm" variant="outline">
+                      <Button size="sm" variant="outline" className="hover:bg-blue-500/5 hover:text-blue-600 hover:border-blue-500/30">
                         View Profile
                       </Button>
                     </Link>
@@ -515,33 +538,55 @@ export default function RecruiterDashboard() {
       </Card>
 
       {/* Hiring Funnel */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Hiring Funnel Analytics</CardTitle>
-          <CardDescription>Track candidates through your hiring process</CardDescription>
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
+              <TrendingUp className="h-5 w-5 text-white" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-xl font-bold">Hiring Funnel Analytics</CardTitle>
+              <CardDescription>Track candidates through your hiring process</CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {hiringFunnel.length === 0 || stats.totalApplicants === 0 ? (
-            <div className="py-8 text-center">
-              <TrendingUp className="mx-auto h-10 w-10 text-muted-foreground" />
-              <p className="mt-2 text-muted-foreground">No data yet</p>
-              <p className="text-sm text-muted-foreground">Analytics will appear once you have applicants</p>
+            <div className="py-12 text-center">
+              <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                <TrendingUp className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <p className="font-medium text-foreground">No data yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Analytics will appear once you have applicants</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {hiringFunnel.map((stage) => (
-                <div key={stage.stage} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-foreground">{stage.stage}</span>
-                    <span className="text-muted-foreground">
-                      {stage.count} candidates ({stage.percentage}%)
-                    </span>
+            <div className="space-y-6">
+              {hiringFunnel.map((stage, index) => {
+                const colors = [
+                  "from-blue-500 to-blue-600",
+                  "from-violet-500 to-violet-600",
+                  "from-amber-500 to-amber-600",
+                  "from-purple-500 to-purple-600",
+                  "from-emerald-500 to-emerald-600",
+                ]
+                return (
+                  <div key={stage.stage} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground">{stage.stage}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-bold text-foreground">{stage.count}</span>
+                        <span className="text-sm text-muted-foreground">({stage.percentage}%)</span>
+                      </div>
+                    </div>
+                    <div className="relative h-4 w-full overflow-hidden rounded-full bg-muted">
+                      <div 
+                        className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-500", colors[index])}
+                        style={{ width: `${stage.percentage}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="relative">
-                    <Progress value={stage.percentage} className="h-3" />
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>

@@ -224,34 +224,41 @@ export default function ApplicantDashboard() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Welcome Section */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Welcome back, {userName.split(" ")[0]}!</h1>
-          <p className="mt-2 text-muted-foreground">Here's what's happening with your job search today.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Welcome back, {userName.split(" ")[0]}!</h1>
+          <p className="text-muted-foreground">Here's what's happening with your job search today.</p>
         </div>
-        <Button variant="outline" onClick={fetchDashboardData} disabled={isLoading}>
+        <Button variant="outline" onClick={fetchDashboardData} disabled={isLoading} className="shadow-sm">
           <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {dashboardStats.map((stat) => {
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {dashboardStats.map((stat, index) => {
           const Icon = stat.icon
+          const gradients = [
+            "from-blue-500 to-blue-600",
+            "from-emerald-500 to-emerald-600",
+            "from-purple-500 to-purple-600",
+            "from-amber-500 to-amber-600",
+          ]
           return (
-            <Card key={stat.label}>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
+            <Card key={stat.label} className="relative overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+              <div className={`absolute inset-0 bg-gradient-to-br opacity-5 ${gradients[index]}`} />
+              <CardContent className="p-6 relative">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 space-y-3">
                     <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
-                    <p className="mt-2 text-3xl font-bold text-foreground">{stat.value}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{stat.change}</p>
+                    <p className="text-4xl font-bold text-foreground tracking-tight">{stat.value}</p>
+                    <p className="text-xs font-medium text-muted-foreground">{stat.change}</p>
                   </div>
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${stat.bgColor} ${stat.color}`}>
-                    <Icon className="h-6 w-6" />
+                  <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br shadow-lg ${gradients[index]}`}>
+                    <Icon className="h-7 w-7 text-white" />
                   </div>
                 </div>
               </CardContent>
@@ -262,17 +269,18 @@ export default function ApplicantDashboard() {
 
       {/* Hired Celebration */}
       {stats.hired > 0 && (
-        <Card className="border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 to-green-500/10">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
-                <span className="text-3xl">🎉</span>
+        <Card className="border-0 shadow-xl bg-gradient-to-r from-emerald-500 to-green-500 text-white overflow-hidden relative">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRjMC0yIDItNCAyLTRzLTItMi00LTJjLTItMi00LTItNC0yczIgMiAyIDRjMCAyLTIgNC0yIDRzMiAyIDQgMmMyIDIgNCAyIDQgMnMtMi0yLTItNHoiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-30" />
+          <CardContent className="p-6 relative">
+            <div className="flex items-center gap-5">
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm shadow-lg">
+                <span className="text-4xl">🎉</span>
               </div>
-              <div>
-                <h3 className="text-xl font-bold text-emerald-700 dark:text-emerald-400">
+              <div className="space-y-1">
+                <h3 className="text-2xl font-bold text-white">
                   Congratulations on getting hired!
                 </h3>
-                <p className="text-emerald-600 dark:text-emerald-500">
+                <p className="text-white/90">
                   You've been hired for {stats.hired} position{stats.hired > 1 ? 's' : ''}. Best of luck in your new role!
                 </p>
               </div>
@@ -283,15 +291,20 @@ export default function ApplicantDashboard() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Recent Applications */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
+        <Card className="lg:col-span-2 border-0 shadow-lg">
+          <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Recent Applications</CardTitle>
-                <CardDescription>Track your latest job applications</CardDescription>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                <div className="space-y-1">
+                  <CardTitle className="text-xl font-bold">Recent Applications</CardTitle>
+                  <CardDescription>Track your latest job applications</CardDescription>
+                </div>
               </div>
               <Link href="/applicant/applications">
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="hover:bg-blue-500/5 hover:text-blue-600 hover:border-blue-500/30">
                   View All
                 </Button>
               </Link>
@@ -299,32 +312,36 @@ export default function ApplicantDashboard() {
           </CardHeader>
           <CardContent>
             {recentApplications.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <p className="mt-2 text-muted-foreground">No applications yet</p>
+              <div className="text-center py-12">
+                <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <FileText className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <p className="font-medium text-foreground">No applications yet</p>
+                <p className="text-sm text-muted-foreground mt-1">Start exploring jobs and apply</p>
                 <Link href="/applicant/jobs">
-                  <Button variant="outline" className="mt-4">Start Applying</Button>
+                  <Button className="mt-4 shadow-md">Start Applying</Button>
                 </Link>
               </div>
             ) : (
               <div className="space-y-4">
                 {recentApplications.map((app) => (
-                  <div key={app.id} className="flex items-start gap-4 rounded-lg border p-4 transition-all hover:shadow-sm">
-                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold">
+                  <div key={app.id} className="group flex items-start gap-4 rounded-xl border-2 border-transparent hover:border-blue-500/20 bg-muted/30 hover:bg-muted/50 p-4 transition-all duration-300">
+                    <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white text-xl font-bold shadow-lg">
                       {app.company?.charAt(0) || "C"}
                     </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-start justify-between">
-                        <div>
+                    <div className="flex-1 space-y-2 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
                           <Link href={`/applicant/jobs/${app.jobId}`}>
-                            <h4 className="font-semibold text-foreground hover:text-primary">{app.title}</h4>
+                            <h4 className="font-bold text-foreground group-hover:text-blue-600 transition-colors truncate">{app.title}</h4>
                           </Link>
-                          <p className="text-sm text-muted-foreground">{app.company}</p>
+                          <p className="text-sm text-muted-foreground truncate">{app.company}</p>
                         </div>
-                        <Badge className={getStatusColor(app.status)}>{getStatusLabel(app.status)}</Badge>
+                        <Badge className={`${getStatusColor(app.status)} shrink-0`}>{getStatusLabel(app.status)}</Badge>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>Applied {app.appliedDate}</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        Applied {app.appliedDate}
                       </div>
                     </div>
                   </div>
@@ -335,47 +352,63 @@ export default function ApplicantDashboard() {
         </Card>
 
         {/* Profile Completion */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Complete Your Profile</CardTitle>
-            <CardDescription>Improve your chances of getting hired</CardDescription>
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-bold">Profile Completion</CardTitle>
+                <CardDescription>Improve your chances of getting hired</CardDescription>
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-white" />
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Profile Completion</span>
-                <span className="font-medium text-foreground">{profileCompletion}%</span>
+                <span className="text-muted-foreground font-medium">Completion</span>
+                <span className="text-2xl font-bold text-foreground">{profileCompletion}%</span>
               </div>
-              <Progress value={profileCompletion} className="h-2" />
+              <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+                <div 
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-600 transition-all duration-500"
+                  style={{ width: `${profileCompletion}%` }}
+                />
+              </div>
             </div>
             {profileCompletion === 100 ? (
-              <div className="rounded-lg bg-green-500/10 p-3 border border-green-500/20">
-                <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                  ✅ Your profile is complete!
-                </p>
-                <p className="text-xs text-green-600 dark:text-green-500 mt-1">
+              <div className="rounded-xl bg-emerald-500/10 p-4 border border-emerald-500/20">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  <p className="font-semibold text-emerald-700 dark:text-emerald-400">
+                    Profile complete!
+                  </p>
+                </div>
+                <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1 ml-7">
                   You're ready to apply for jobs.
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Complete these steps:</p>
-                <ul className="space-y-1 text-sm text-muted-foreground">
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-foreground">Complete these steps:</p>
+                <ul className="space-y-2">
                   {missingProfileItems.slice(0, 4).map((item) => (
-                    <li key={item} className="flex items-center gap-2">
-                      <span className="text-orange-500">○</span> Add {item.toLowerCase()}
+                    <li key={item} className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+                      <div className="h-2 w-2 rounded-full bg-amber-500" />
+                      Add {item.toLowerCase()}
                     </li>
                   ))}
                   {missingProfileItems.length > 4 && (
-                    <li className="flex items-center gap-2 text-xs">
-                      <span>...</span> and {missingProfileItems.length - 4} more
+                    <li className="text-xs text-muted-foreground pl-3">
+                      + {missingProfileItems.length - 4} more items
                     </li>
                   )}
                 </ul>
               </div>
             )}
             <Link href="/applicant/profile">
-              <Button variant="outline" className="w-full bg-transparent">
+              <Button className="w-full mt-2 shadow-md" variant={profileCompletion < 100 ? "default" : "outline"}>
                 {profileCompletion < 100 ? "Complete Profile" : "Edit Profile"}
               </Button>
             </Link>
@@ -384,15 +417,20 @@ export default function ApplicantDashboard() {
       </div>
 
       {/* Recommended Jobs */}
-      <Card>
-        <CardHeader>
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Recommended for You</CardTitle>
-              <CardDescription>Jobs you haven't applied to yet</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
+                <Star className="h-5 w-5 text-white" />
+              </div>
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-bold">Recommended for You</CardTitle>
+                <CardDescription>Jobs you haven't applied to yet</CardDescription>
+              </div>
             </div>
             <Link href="/applicant/jobs">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="hover:bg-emerald-500/5 hover:text-emerald-600 hover:border-emerald-500/30">
                 Browse All Jobs
               </Button>
             </Link>
@@ -400,38 +438,40 @@ export default function ApplicantDashboard() {
         </CardHeader>
         <CardContent>
           {recommendedJobs.length === 0 ? (
-            <div className="text-center py-8">
-              <Briefcase className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <p className="mt-2 text-muted-foreground">No new job recommendations</p>
-              <p className="text-sm text-muted-foreground">You may have applied to all available jobs!</p>
+            <div className="text-center py-12">
+              <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Briefcase className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <p className="font-medium text-foreground">No new job recommendations</p>
+              <p className="text-sm text-muted-foreground mt-1">You may have applied to all available jobs!</p>
               <Link href="/applicant/jobs">
-                <Button variant="outline" className="mt-4">Browse Jobs</Button>
+                <Button className="mt-4 shadow-md">Browse Jobs</Button>
               </Link>
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {recommendedJobs.map((job) => (
-                <div key={job.id} className="space-y-3 rounded-lg border p-4 transition-all hover:shadow-md">
-                  <div className="flex items-start justify-between">
-                    <h4 className="font-semibold text-foreground">{job.title}</h4>
+                <div key={job.id} className="group space-y-4 rounded-xl border-2 border-transparent hover:border-emerald-500/20 bg-muted/30 hover:bg-emerald-500/5 p-5 transition-all duration-300">
+                  <div>
+                    <h4 className="font-bold text-lg text-foreground group-hover:text-emerald-600 transition-colors">{job.title}</h4>
+                    <p className="text-sm font-medium text-muted-foreground mt-1">{job.company}</p>
                   </div>
-                  <p className="text-sm font-medium text-muted-foreground">{job.company}</p>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" />
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="h-4 w-4 text-emerald-500" />
                       {job.location}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-primary">AED</span>
-                      {job.salary}
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-xs font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">AED</span>
+                      <span className="text-foreground font-medium">{job.salary}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
                       Posted {job.posted}
                     </div>
                   </div>
                   <Link href={`/applicant/jobs/${job.id}`}>
-                    <Button className="w-full" size="sm">
+                    <Button className="w-full shadow-md" size="sm">
                       View Details
                     </Button>
                   </Link>
@@ -443,35 +483,48 @@ export default function ApplicantDashboard() {
       </Card>
 
       {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center">
+              <TrendingUp className="h-5 w-5 text-white" />
+            </div>
+            <CardTitle className="text-xl font-bold">Quick Actions</CardTitle>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Link href="/applicant/jobs">
-              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
-                <Briefcase className="h-6 w-6" />
-                <span>Browse Jobs</span>
-              </Button>
+              <div className="group flex flex-col items-center gap-3 rounded-xl border-2 border-transparent hover:border-blue-500/20 bg-muted/30 hover:bg-blue-500/5 p-6 transition-all duration-300 cursor-pointer">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <Briefcase className="h-7 w-7 text-white" />
+                </div>
+                <span className="font-semibold text-foreground group-hover:text-blue-600 transition-colors">Browse Jobs</span>
+              </div>
             </Link>
             <Link href="/applicant/applications">
-              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
-                <FileText className="h-6 w-6" />
-                <span>My Applications</span>
-              </Button>
+              <div className="group flex flex-col items-center gap-3 rounded-xl border-2 border-transparent hover:border-emerald-500/20 bg-muted/30 hover:bg-emerald-500/5 p-6 transition-all duration-300 cursor-pointer">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <FileText className="h-7 w-7 text-white" />
+                </div>
+                <span className="font-semibold text-foreground group-hover:text-emerald-600 transition-colors">My Applications</span>
+              </div>
             </Link>
             <Link href="/applicant/interviews">
-              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
-                <Calendar className="h-6 w-6" />
-                <span>Interviews</span>
-              </Button>
+              <div className="group flex flex-col items-center gap-3 rounded-xl border-2 border-transparent hover:border-purple-500/20 bg-muted/30 hover:bg-purple-500/5 p-6 transition-all duration-300 cursor-pointer">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <Calendar className="h-7 w-7 text-white" />
+                </div>
+                <span className="font-semibold text-foreground group-hover:text-purple-600 transition-colors">Interviews</span>
+              </div>
             </Link>
             <Link href="/applicant/profile">
-              <Button variant="outline" className="w-full h-auto py-4 flex flex-col gap-2">
-                <TrendingUp className="h-6 w-6" />
-                <span>My Profile</span>
-              </Button>
+              <div className="group flex flex-col items-center gap-3 rounded-xl border-2 border-transparent hover:border-amber-500/20 bg-muted/30 hover:bg-amber-500/5 p-6 transition-all duration-300 cursor-pointer">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <TrendingUp className="h-7 w-7 text-white" />
+                </div>
+                <span className="font-semibold text-foreground group-hover:text-amber-600 transition-colors">My Profile</span>
+              </div>
             </Link>
           </div>
         </CardContent>

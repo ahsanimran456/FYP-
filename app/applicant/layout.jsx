@@ -279,7 +279,7 @@ export default function ApplicantLayout({ children }) {
                       "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                       isActive
                         ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        : "text-muted-foreground hover:bg-muted",
                     )}
                   >
                     <Icon className="h-5 w-5" />
@@ -352,8 +352,8 @@ export default function ApplicantLayout({ children }) {
                   <Bell className="h-5 w-5" />
                   {(unreadCount > 0 || showNotificationBadge) && (
                     <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-                      <span className="relative inline-flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                         {unreadCount > 9 ? "9+" : unreadCount || "!"}
                       </span>
                     </span>
@@ -364,7 +364,7 @@ export default function ApplicantLayout({ children }) {
                 <DropdownMenuLabel className="flex items-center justify-between">
                   <span>Notifications</span>
                   {unreadCount > 0 && (
-                    <Badge variant="secondary" className="text-xs bg-green-500/10 text-green-600">
+                    <Badge variant="secondary" className="text-xs">
                       {unreadCount} updates
                     </Badge>
                   )}
@@ -381,13 +381,14 @@ export default function ApplicantLayout({ children }) {
                     notifications.map((notification) => (
                       <DropdownMenuItem 
                         key={notification.id} 
-                        className="flex items-start gap-3 p-3 cursor-pointer"
+                        className="flex items-start gap-3 p-3 cursor-pointer hover:bg-muted/80 focus:bg-muted/80 transition-colors"
                         onClick={() => router.push("/applicant/applications")}
                       >
                         <div className={cn(
-                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                          notification.type === "success" ? "bg-green-500/10" : 
-                          notification.type === "info" ? "bg-blue-500/10" : "bg-gray-500/10"
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
+                          notification.type === "success" ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800" : 
+                          notification.type === "info" ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800" : 
+                          "bg-muted border-border"
                         )}>
                           {getNotificationIcon(notification.status)}
                         </div>

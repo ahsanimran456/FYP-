@@ -9,8 +9,18 @@ const transporter = nodemailer.createTransport({
   },
 })
 
+// Helper to generate reply info text
+const getReplyInfo = (recruiterEmail, recruiterName) => {
+  if (recruiterEmail) {
+    return `<p style="font-size: 12px; color: #6b7280; margin-top: 10px; padding: 10px; background: #f3f4f6; border-radius: 6px;">
+      💬 <strong>Need to respond?</strong> Simply reply to this email - your message will be sent directly to ${recruiterName || 'the HR team'} at ${recruiterEmail}
+    </p>`
+  }
+  return ''
+}
+
 // Email templates
-const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDetails = null) => {
+const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDetails = null, recruiterEmail = null, recruiterName = null, candidateEmail = null) => {
   switch (type) {
     case "shortlisted":
       return {
@@ -29,6 +39,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
                 <p style="margin: 10px 0 0 0; color: #166534;">Our team will contact you soon to schedule an interview. Please keep an eye on your email and phone.</p>
               </div>
               <p style="font-size: 16px;">Best regards,<br/><strong>${companyName} HR Team</strong></p>
+              ${getReplyInfo(recruiterEmail, recruiterName)}
               <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
               <p style="font-size: 12px; color: #6b7280; text-align: center;">
                 TalentHub - Connecting Talent with Opportunity<br/>
@@ -55,6 +66,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
                 <p style="margin: 0; color: #374151;">We encourage you to apply for future opportunities at ${companyName}. We wish you the best in your career search.</p>
               </div>
               <p style="font-size: 16px;">Best regards,<br/><strong>${companyName} HR Team</strong></p>
+              ${getReplyInfo(recruiterEmail, recruiterName)}
               <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
               <p style="font-size: 12px; color: #6b7280; text-align: center;">
                 TalentHub - Connecting Talent with Opportunity<br/>
@@ -138,6 +150,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
               </div>
               
               <p style="font-size: 16px;">Best regards,<br/><strong>${companyName} HR Team</strong></p>
+              ${getReplyInfo(recruiterEmail, recruiterName)}
               <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
               <p style="font-size: 12px; color: #6b7280; text-align: center;">
                 TalentHub - Connecting Talent with Opportunity<br/>
@@ -177,6 +190,148 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
               
               <p style="font-size: 16px;">Once again, congratulations on your new role!</p>
               <p style="font-size: 16px;">Best regards,<br/><strong>${companyName} HR Team</strong></p>
+              ${getReplyInfo(recruiterEmail, recruiterName)}
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+              <p style="font-size: 12px; color: #6b7280; text-align: center;">
+                TalentHub - Connecting Talent with Opportunity<br/>
+                <a href="mailto:talentedhub971@gmail.com" style="color: #10b981;">talentedhub971@gmail.com</a>
+              </p>
+            </div>
+          </div>
+        `,
+      }
+
+    case "offer_letter":
+      const offerDetails = interviewDetails // Reusing this parameter for offer details
+      return {
+        subject: `🎉 Official Offer Letter - ${jobTitle} at ${companyName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #10b981, #14b8a6); padding: 35px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 28px;">🎉 Congratulations!</h1>
+              <p style="color: rgba(255,255,255,0.95); margin: 15px 0 0 0; font-size: 16px;">You've received an official offer letter!</p>
+            </div>
+            <div style="background: #fff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px;">Dear <strong>${candidateName}</strong>,</p>
+              <p style="font-size: 16px; line-height: 1.6;">We are thrilled to extend an official offer for the position of <strong>${jobTitle}</strong> at <strong>${companyName}</strong>!</p>
+              
+              <div style="background: linear-gradient(135deg, #f0fdf4, #ccfbf1); padding: 25px; border-radius: 12px; margin: 25px 0; border: 2px solid #10b981;">
+                <h3 style="margin: 0 0 15px 0; color: #047857; font-size: 18px;">📋 Offer Highlights</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280;">💼 Position:</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #1f2937;">${jobTitle}</td>
+                  </tr>
+                  ${offerDetails?.monthlySalary ? `
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280;">💰 Monthly Salary:</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #1f2937;">${offerDetails.currency || 'AED'} ${offerDetails.monthlySalary}</td>
+                  </tr>
+                  ` : ''}
+                  ${offerDetails?.joiningDate ? `
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280;">📅 Joining Date:</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #1f2937;">${offerDetails.joiningDate}</td>
+                  </tr>
+                  ` : ''}
+                </table>
+              </div>
+              
+              <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+                <p style="margin: 0; color: #92400e;"><strong>📌 Action Required:</strong> Please log in to your TalentHub dashboard to view the complete offer letter and respond.</p>
+              </div>
+              
+              <div style="text-align: center; margin: 25px 0;">
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/applicant/applications" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #10b981, #14b8a6); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Offer Letter</a>
+              </div>
+              
+              <p style="font-size: 16px;">We look forward to welcoming you to the ${companyName} team!</p>
+              <p style="font-size: 16px;">Best regards,<br/><strong>${companyName} HR Team</strong></p>
+              ${getReplyInfo(recruiterEmail, recruiterName)}
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+              <p style="font-size: 12px; color: #6b7280; text-align: center;">
+                TalentHub - Connecting Talent with Opportunity<br/>
+                <a href="mailto:talentedhub971@gmail.com" style="color: #10b981;">talentedhub971@gmail.com</a>
+              </p>
+            </div>
+          </div>
+        `,
+      }
+
+    case "offer_accepted":
+      return {
+        subject: `🎉 Great News! ${candidateName} Accepted the Offer - ${jobTitle}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #10b981, #059669); padding: 35px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 28px;">🎉 Offer Accepted!</h1>
+              <p style="color: rgba(255,255,255,0.95); margin: 15px 0 0 0; font-size: 16px;">Great news for ${companyName}!</p>
+            </div>
+            <div style="background: #fff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px;">Hello,</p>
+              <p style="font-size: 16px; line-height: 1.6;">We're excited to inform you that <strong>${candidateName}</strong> has <strong style="color: #059669;">accepted</strong> the offer for the position of <strong>${jobTitle}</strong>!</p>
+              
+              <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); padding: 25px; border-radius: 12px; margin: 25px 0; border: 2px solid #10b981;">
+                <h3 style="margin: 0 0 15px 0; color: #047857; font-size: 18px;">✅ Next Steps</h3>
+                <ul style="margin: 0; padding-left: 20px; color: #374151;">
+                  <li style="margin-bottom: 8px;">Prepare onboarding documents</li>
+                  <li style="margin-bottom: 8px;">Set up workspace and equipment</li>
+                  <li style="margin-bottom: 8px;">Schedule orientation meeting</li>
+                  <li style="margin-bottom: 8px;">Send welcome package</li>
+                </ul>
+              </div>
+              
+              <div style="background: #eff6ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+                <p style="margin: 0; color: #1e40af;"><strong>📧 Candidate Contact:</strong> ${candidateEmail || 'Contact via TalentHub'}</p>
+              </div>
+              
+              <div style="text-align: center; margin: 25px 0;">
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/recruiter/candidates" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #10b981, #059669); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Candidate</a>
+              </div>
+              
+              <p style="font-size: 16px;">Congratulations on your new hire!</p>
+              <p style="font-size: 16px;">Best regards,<br/><strong>TalentHub Team</strong></p>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+              <p style="font-size: 12px; color: #6b7280; text-align: center;">
+                TalentHub - Connecting Talent with Opportunity<br/>
+                <a href="mailto:talentedhub971@gmail.com" style="color: #10b981;">talentedhub971@gmail.com</a>
+              </p>
+            </div>
+          </div>
+        `,
+      }
+
+    case "offer_declined":
+      return {
+        subject: `📋 Update: ${candidateName} Declined the Offer - ${jobTitle}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #6b7280, #4b5563); padding: 35px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 28px;">📋 Offer Declined</h1>
+              <p style="color: rgba(255,255,255,0.95); margin: 15px 0 0 0; font-size: 16px;">Update on ${jobTitle} position</p>
+            </div>
+            <div style="background: #fff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px;">Hello,</p>
+              <p style="font-size: 16px; line-height: 1.6;">We wanted to inform you that <strong>${candidateName}</strong> has <strong style="color: #dc2626;">declined</strong> the offer for the position of <strong>${jobTitle}</strong>.</p>
+              
+              <div style="background: #fef2f2; padding: 20px; border-radius: 12px; margin: 25px 0; border: 1px solid #fecaca;">
+                <p style="margin: 0; color: #991b1b;">While this candidate has chosen not to proceed, you have other qualified candidates in your pipeline.</p>
+              </div>
+              
+              <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 25px 0; border: 1px solid #bbf7d0;">
+                <h3 style="margin: 0 0 15px 0; color: #047857; font-size: 18px;">💡 Suggested Next Steps</h3>
+                <ul style="margin: 0; padding-left: 20px; color: #374151;">
+                  <li style="margin-bottom: 8px;">Review other shortlisted candidates</li>
+                  <li style="margin-bottom: 8px;">Consider candidates who performed well in interviews</li>
+                  <li style="margin-bottom: 8px;">Extend offer to the next best candidate</li>
+                </ul>
+              </div>
+              
+              <div style="text-align: center; margin: 25px 0;">
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/recruiter/candidates" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">View Other Candidates</a>
+              </div>
+              
+              <p style="font-size: 16px;">Best regards,<br/><strong>TalentHub Team</strong></p>
               <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
               <p style="font-size: 12px; color: #6b7280; text-align: center;">
                 TalentHub - Connecting Talent with Opportunity<br/>
@@ -194,7 +349,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
 
 export async function POST(request) {
   try {
-    const { type, to, candidateName, jobTitle, companyName, interviewDetails } = await request.json()
+    const { type, to, candidateName, jobTitle, companyName, interviewDetails, recruiterEmail, recruiterName, candidateEmail } = await request.json()
 
     if (!type || !to || !candidateName || !jobTitle) {
       return new Response(
@@ -203,7 +358,7 @@ export async function POST(request) {
       )
     }
 
-    const emailContent = getEmailContent(type, candidateName, jobTitle, companyName || "Company", interviewDetails)
+    const emailContent = getEmailContent(type, candidateName, jobTitle, companyName || "Company", interviewDetails, recruiterEmail, recruiterName, candidateEmail)
 
     if (!emailContent) {
       return new Response(
@@ -212,7 +367,7 @@ export async function POST(request) {
       )
     }
 
-    // Send email using Gmail SMTP
+    // Build mail options with Reply-To header for HR
     const mailOptions = {
       from: `TalentHub HR <talentedhub971@gmail.com>`,
       to: to,
@@ -220,14 +375,30 @@ export async function POST(request) {
       html: emailContent.html,
     }
 
+    // Set Reply-To to the actual HR/recruiter's email if provided
+    // This ensures when candidate replies, it goes to the HR directly
+    if (recruiterEmail) {
+      const replyToName = recruiterName || companyName || "HR Team"
+      mailOptions.replyTo = `${replyToName} <${recruiterEmail}>`
+      
+      // Also add recruiter as CC so they have a copy of the sent email
+      // mailOptions.cc = recruiterEmail  // Uncomment if you want HR to get a copy
+      
+      console.log(`📧 Reply-To set to: ${recruiterEmail}`)
+    }
+
     const info = await transporter.sendMail(mailOptions)
 
     console.log("✅ Email sent successfully:", info.messageId)
+    console.log(`   → To: ${to}`)
+    console.log(`   → Reply-To: ${recruiterEmail || "talentedhub971@gmail.com"}`)
+    
     return new Response(
       JSON.stringify({ 
         success: true, 
         message: "Email sent successfully!", 
-        messageId: info.messageId 
+        messageId: info.messageId,
+        replyTo: recruiterEmail || null
       }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     )

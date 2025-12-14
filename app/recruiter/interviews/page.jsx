@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -28,9 +28,14 @@ import {
   Mail,
   AlertCircle,
   Star,
+  Send,
+  Gift,
+  ThumbsDown,
+  PartyPopper,
 } from "lucide-react"
-import { collection, query, where, getDocs, doc, updateDoc, getDoc } from "firebase/firestore"
+import { collection, query, where, getDocs, doc, updateDoc, getDoc, onSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
+import { OfferLetterDialog } from "@/components/offer-letter-dialog"
 
 export default function RecruiterInterviewsPage() {
   const { toast } = useToast()
@@ -39,34 +44,221 @@ export default function RecruiterInterviewsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [filterType, setFilterType] = useState("all")
   const [updatingInterview, setUpdatingInterview] = useState(null)
+  
+  // Offer letter dialog
+  const [offerLetterDialogOpen, setOfferLetterDialogOpen] = useState(false)
+  const [selectedInterviewForOffer, setSelectedInterviewForOffer] = useState(null)
+  const [isSendingOffer, setIsSendingOffer] = useState(false)
+  
+  // Track previous interviews for detecting changes
+  const [prevInterviews, setPrevInterviews] = useState([])
+  const isFirstLoad = useRef(true)
 
-  // Fetch all interviews from jobs collection
+  // Manual refresh - real-time listener handles actual updates
   const fetchInterviews = async () => {
-    try {
-      setIsLoading(true)
-      const userId = localStorage.getItem("userId")
-      
-      if (!userId) {
-        setIsLoading(false)
-        return
-      }
+    // Real-time listener handles updates automatically
+    // This is just for the refresh button visual feedback
+    setIsLoading(true)
+    setTimeout(() => setIsLoading(false), 500)
+  }
 
-      // Fetch all jobs for this recruiter
-      const jobsQuery = query(
-        collection(db, "jobs"),
-        where("recruiterId", "==", userId)
+  // Mark interview as completed (hired)
+  const markAsCompleted = async (interview, outcome) => {
+    setUpdatingInterview(interview.id)
+    try {
+      const jobRef = doc(db, "jobs", interview.jobId)
+      const jobDoc = await getDoc(jobRef)
+      
+      if (!jobDoc.exists()) return
+      
+      const jobData = jobDoc.data()
+      const applicants = jobData.applicants || []
+      const companyName = jobData.companyName || localStorage.getItem("companyName") || "Company"
+      const jobTitle = interview.position
+      
+      const updatedApplicants = applicants.map(app => 
+        app.applicantId === interview.applicantId
+          ? { ...app, status: outcome, updatedAt: new Date().toISOString() }
+          : app
       )
       
-      const jobsSnapshot = await getDocs(jobsQuery)
+      await updateDoc(jobRef, { applicants: updatedApplicants })
+      
+      // Send email notification with Reply-To set to recruiter
+      if (interview.email) {
+        const recruiterEmail = localStorage.getItem("userEmail") || localStorage.getItem("email")
+        const recruiterName = localStorage.getItem("userName") || localStorage.getItem("name")
+        
+        await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: outcome,
+            to: interview.email,
+            candidateName: interview.candidate,
+            jobTitle,
+            companyName,
+            // Include recruiter's email so replies go to them
+            recruiterEmail,
+            recruiterName,
+          }),
+        })
+      }
+      
+      // Update local state
+      setInterviews(prev => prev.map(i => 
+        i.id === interview.id
+          ? { ...i, status: "completed", outcome }
+          : i
+      ))
+      
+      toast({
+        title: outcome === "hired" ? "🎊 Candidate Hired!" : "Interview Completed",
+        description: outcome === "hired" 
+          ? `${interview.candidate} has been hired! Congratulations email sent.`
+          : `Interview with ${interview.candidate} marked as completed.`,
+      })
+    } catch (error) {
+      console.error("Error updating interview:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update interview status.",
+        variant: "destructive",
+      })
+    } finally {
+      setUpdatingInterview(null)
+    }
+  }
+
+  // Handle send offer letter click
+  const handleSendOfferClick = (interview) => {
+    setSelectedInterviewForOffer(interview)
+    setOfferLetterDialogOpen(true)
+  }
+
+  // Send offer letter
+  const handleSendOffer = async (offerDetails) => {
+    if (!selectedInterviewForOffer) return
+    
+    setIsSendingOffer(true)
+    try {
+      const jobRef = doc(db, "jobs", selectedInterviewForOffer.jobId)
+      const jobDoc = await getDoc(jobRef)
+      
+      if (!jobDoc.exists()) {
+        toast({ title: "Error", description: "Job not found", variant: "destructive" })
+        return
+      }
+      
+      const jobData = jobDoc.data()
+      const applicants = jobData.applicants || []
+      const jobTitle = selectedInterviewForOffer.position
+      const companyName = jobData.companyName || localStorage.getItem("companyName") || "Company"
+      
+      // Format joining date for display
+      const joiningDateFormatted = new Date(offerDetails.joiningDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+      
+      // Update applicant with offer letter details
+      const updatedApplicants = applicants.map(app => 
+        app.applicantId === selectedInterviewForOffer.applicantId 
+          ? { 
+              ...app, 
+              status: "offer_sent",
+              offerLetter: {
+                ...offerDetails,
+                joiningDate: joiningDateFormatted,
+                rawJoiningDate: offerDetails.joiningDate,
+                sentAt: new Date().toISOString(),
+                status: "pending",
+              },
+              updatedAt: new Date().toISOString(),
+            }
+          : app
+      )
+      
+      await updateDoc(jobRef, { applicants: updatedApplicants })
+      
+      // Update local state
+      setInterviews(prev => prev.map(i => 
+        i.id === selectedInterviewForOffer.id
+          ? { ...i, status: "offer_sent", offerLetter: { ...offerDetails, status: "pending" } }
+          : i
+      ))
+      
+      // Send email notification
+      if (selectedInterviewForOffer.email) {
+        const recruiterEmail = localStorage.getItem("userEmail") || localStorage.getItem("email")
+        const recruiterName = localStorage.getItem("userName") || localStorage.getItem("name")
+        
+        await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "offer_letter",
+            to: selectedInterviewForOffer.email,
+            candidateName: selectedInterviewForOffer.candidate,
+            jobTitle,
+            companyName,
+            interviewDetails: {
+              ...offerDetails,
+              joiningDate: joiningDateFormatted,
+            },
+            recruiterEmail,
+            recruiterName,
+          }),
+        })
+      }
+      
+      toast({
+        title: "🎉 Offer Letter Sent!",
+        description: `Offer letter sent to ${selectedInterviewForOffer.candidate}. They will be notified via email.`,
+      })
+      
+      setOfferLetterDialogOpen(false)
+      setSelectedInterviewForOffer(null)
+    } catch (error) {
+      console.error("Error sending offer:", error)
+      toast({
+        title: "Error",
+        description: "Failed to send offer letter. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingOffer(false)
+    }
+  }
+
+  // Real-time listener for interviews
+  useEffect(() => {
+    const userId = localStorage.getItem("userId")
+    if (!userId) {
+      setIsLoading(false)
+      return
+    }
+
+    setIsLoading(true)
+
+    // Real-time listener for recruiter's jobs
+    const jobsQuery = query(
+      collection(db, "jobs"),
+      where("recruiterId", "==", userId)
+    )
+
+    const unsubscribe = onSnapshot(jobsQuery, (snapshot) => {
       const allInterviews = []
       
-      jobsSnapshot.docs.forEach((jobDoc) => {
+      snapshot.docs.forEach((jobDoc) => {
         const jobData = jobDoc.data()
         const jobTitle = jobData.jobtitle || jobData.title || "Untitled Job"
         const applicants = Array.isArray(jobData.applicants) ? jobData.applicants : []
         
-        // Filter applicants who have interviews scheduled
         applicants.forEach((applicant) => {
+          // Interview scheduled
           if (applicant.status === "interview_scheduled" && applicant.interviewDetails) {
             allInterviews.push({
               id: `${jobDoc.id}_${applicant.applicantId}`,
@@ -91,7 +283,7 @@ export default function RecruiterInterviewsPage() {
             })
           }
           
-          // Also get hired candidates as completed interviews
+          // Hired candidates
           if (applicant.status === "hired" && applicant.interviewDetails) {
             allInterviews.push({
               id: `${jobDoc.id}_${applicant.applicantId}`,
@@ -112,6 +304,7 @@ export default function RecruiterInterviewsPage() {
               notes: applicant.interviewDetails.notes || "",
               status: "completed",
               outcome: "hired",
+              offerLetter: applicant.offerLetter || null,
               appliedAt: applicant.appliedAt,
               scheduledAt: applicant.updatedAt,
             })
@@ -142,94 +335,110 @@ export default function RecruiterInterviewsPage() {
               scheduledAt: applicant.updatedAt,
             })
           }
+          
+          // Offer sent candidates
+          if (applicant.status === "offer_sent" && applicant.interviewDetails) {
+            allInterviews.push({
+              id: `${jobDoc.id}_${applicant.applicantId}`,
+              jobId: jobDoc.id,
+              applicantId: applicant.applicantId,
+              candidate: applicant.applicantName || "Unknown",
+              email: applicant.applicantEmail || "",
+              phone: applicant.applicantPhone || "",
+              avatar: applicant.applicantAvatar || "",
+              position: jobTitle,
+              companyName: jobData.companyName || "",
+              date: applicant.interviewDetails.date,
+              time: applicant.interviewDetails.time,
+              type: applicant.interviewDetails.type,
+              meetingLink: applicant.interviewDetails.link || "",
+              interviewPhone: applicant.interviewDetails.phone || applicant.applicantPhone || "",
+              location: applicant.interviewDetails.location || "",
+              notes: applicant.interviewDetails.notes || "",
+              status: "offer_sent",
+              offerLetter: applicant.offerLetter || null,
+              appliedAt: applicant.appliedAt,
+              scheduledAt: applicant.updatedAt,
+            })
+          }
+          
+          // Offer rejected candidates
+          if (applicant.status === "offer_rejected" && applicant.interviewDetails) {
+            allInterviews.push({
+              id: `${jobDoc.id}_${applicant.applicantId}`,
+              jobId: jobDoc.id,
+              applicantId: applicant.applicantId,
+              candidate: applicant.applicantName || "Unknown",
+              email: applicant.applicantEmail || "",
+              phone: applicant.applicantPhone || "",
+              avatar: applicant.applicantAvatar || "",
+              position: jobTitle,
+              companyName: jobData.companyName || "",
+              date: applicant.interviewDetails.date,
+              time: applicant.interviewDetails.time,
+              type: applicant.interviewDetails.type,
+              meetingLink: applicant.interviewDetails.link || "",
+              interviewPhone: applicant.interviewDetails.phone || applicant.applicantPhone || "",
+              location: applicant.interviewDetails.location || "",
+              notes: applicant.interviewDetails.notes || "",
+              status: "offer_rejected",
+              offerLetter: applicant.offerLetter || null,
+              appliedAt: applicant.appliedAt,
+              scheduledAt: applicant.updatedAt,
+            })
+          }
         })
       })
       
-      // Sort by date (nearest first for upcoming, newest first for past)
+      // Sort by date
       allInterviews.sort((a, b) => {
         const dateA = new Date(a.date + " " + a.time)
         const dateB = new Date(b.date + " " + b.time)
         return dateA - dateB
       })
       
+      // Detect offer letter responses (accepted/rejected)
+      if (!isFirstLoad.current && prevInterviews.length > 0) {
+        allInterviews.forEach(interview => {
+          const prevInterview = prevInterviews.find(p => p.id === interview.id)
+          
+          // Check if offer was just accepted (status changed from offer_sent to hired)
+          if (prevInterview?.status === "offer_sent" && interview.status === "completed" && interview.outcome === "hired") {
+            toast({
+              title: "🎉 Offer Accepted!",
+              description: `${interview.candidate} has accepted the offer for ${interview.position}!`,
+              duration: 8000,
+            })
+          }
+          
+          // Check if offer was just rejected
+          if (prevInterview?.status === "offer_sent" && interview.offerLetter?.status === "rejected") {
+            toast({
+              title: "📋 Offer Declined",
+              description: `${interview.candidate} has declined the offer for ${interview.position}.`,
+              variant: "destructive",
+              duration: 8000,
+            })
+          }
+        })
+      }
+      
+      isFirstLoad.current = false
+      setPrevInterviews(allInterviews)
       setInterviews(allInterviews)
-      console.log("✅ Fetched", allInterviews.length, "interviews")
-    } catch (error) {
-      console.error("❌ Error fetching interviews:", error)
+      console.log("✅ Real-time interviews update:", allInterviews.length, "interviews")
+      setIsLoading(false)
+    }, (error) => {
+      console.error("❌ Error in interviews listener:", error)
       toast({
         title: "Error loading interviews",
         description: "Failed to load interviews. Please try again.",
         variant: "destructive",
       })
-    } finally {
       setIsLoading(false)
-    }
-  }
+    })
 
-  // Mark interview as completed (hired)
-  const markAsCompleted = async (interview, outcome) => {
-    setUpdatingInterview(interview.id)
-    try {
-      const jobRef = doc(db, "jobs", interview.jobId)
-      const jobDoc = await getDoc(jobRef)
-      
-      if (!jobDoc.exists()) return
-      
-      const jobData = jobDoc.data()
-      const applicants = jobData.applicants || []
-      const companyName = jobData.companyName || localStorage.getItem("companyName") || "Company"
-      const jobTitle = interview.position
-      
-      const updatedApplicants = applicants.map(app => 
-        app.applicantId === interview.applicantId
-          ? { ...app, status: outcome, updatedAt: new Date().toISOString() }
-          : app
-      )
-      
-      await updateDoc(jobRef, { applicants: updatedApplicants })
-      
-      // Send email notification
-      if (interview.email) {
-        await fetch("/api/send-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: outcome,
-            to: interview.email,
-            candidateName: interview.candidate,
-            jobTitle,
-            companyName,
-          }),
-        })
-      }
-      
-      // Update local state
-      setInterviews(prev => prev.map(i => 
-        i.id === interview.id
-          ? { ...i, status: "completed", outcome }
-          : i
-      ))
-      
-      toast({
-        title: outcome === "hired" ? "🎊 Candidate Hired!" : "Interview Completed",
-        description: outcome === "hired" 
-          ? `${interview.candidate} has been hired! Congratulations email sent.`
-          : `Interview with ${interview.candidate} marked as completed.`,
-      })
-    } catch (error) {
-      console.error("Error updating interview:", error)
-      toast({
-        title: "Error",
-        description: "Failed to update interview status.",
-        variant: "destructive",
-      })
-    } finally {
-      setUpdatingInterview(null)
-    }
-  }
-
-  useEffect(() => {
-    fetchInterviews()
+    return () => unsubscribe()
   }, [])
 
   const getTypeIcon = (type) => {
@@ -282,6 +491,8 @@ export default function RecruiterInterviewsPage() {
       if (outcome === "rejected") return "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30"
       return "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/30"
     }
+    if (status === "offer_sent") return "bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/30"
+    if (status === "offer_rejected") return "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30"
     if (status === "no-show") return "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30"
     if (status === "cancelled") return "bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/30"
     return "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/30"
@@ -325,7 +536,9 @@ export default function RecruiterInterviewsPage() {
   const now = new Date().toISOString().split("T")[0]
   const todayInterviews = filteredInterviews.filter(i => isToday(i.date) && i.status === "scheduled")
   const upcomingInterviews = filteredInterviews.filter(i => !isPast(i.date) && i.status === "scheduled")
-  const pastInterviews = filteredInterviews.filter(i => isPast(i.date) || i.status === "completed")
+  const offerSentInterviews = filteredInterviews.filter(i => i.status === "offer_sent")
+  const offerRejectedInterviews = filteredInterviews.filter(i => i.status === "offer_rejected")
+  const pastInterviews = filteredInterviews.filter(i => isPast(i.date) || i.status === "completed" || i.status === "offer_rejected")
 
   // Loading state
   if (isLoading) {
@@ -362,7 +575,7 @@ export default function RecruiterInterviewsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-6">
         <Card className="border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-500/5 to-transparent">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -385,6 +598,17 @@ export default function RecruiterInterviewsPage() {
             </div>
           </CardContent>
         </Card>
+        <Card className="border-l-4 border-l-teal-500 bg-gradient-to-r from-teal-500/5 to-transparent">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Offers Pending</p>
+                <p className="text-2xl font-bold text-foreground">{offerSentInterviews.length}</p>
+              </div>
+              <Gift className="h-8 w-8 text-teal-500" />
+            </div>
+          </CardContent>
+        </Card>
         <Card className="border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-500/5 to-transparent">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -395,6 +619,17 @@ export default function RecruiterInterviewsPage() {
                 </p>
               </div>
               <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-orange-500 bg-gradient-to-r from-orange-500/5 to-transparent">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Offers Declined</p>
+                <p className="text-2xl font-bold text-foreground">{offerRejectedInterviews.length}</p>
+              </div>
+              <ThumbsDown className="h-8 w-8 text-orange-500" />
             </div>
           </CardContent>
         </Card>
@@ -500,9 +735,25 @@ export default function RecruiterInterviewsPage() {
 
       {/* Interviews List */}
       <Tabs defaultValue="upcoming" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="upcoming">Upcoming ({upcomingInterviews.length})</TabsTrigger>
-          <TabsTrigger value="past">Past ({pastInterviews.length})</TabsTrigger>
+          <TabsTrigger value="offers" className="relative">
+            Pending Offers ({offerSentInterviews.length})
+            {offerSentInterviews.length > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-teal-500 text-[10px] text-white">
+                !
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="declined" className="relative">
+            Declined ({offerRejectedInterviews.length})
+            {offerRejectedInterviews.length > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] text-white">
+                !
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="past">Completed ({pastInterviews.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="upcoming" className="space-y-4">
@@ -639,6 +890,16 @@ export default function RecruiterInterviewsPage() {
                                 View Profile
                               </Button>
                             </Link>
+                            {interview.status !== "offer_sent" && (
+                              <Button 
+                                size="sm" 
+                                className="bg-gradient-to-r from-teal-500 to-emerald-500 hover:opacity-90"
+                                onClick={() => handleSendOfferClick(interview)}
+                              >
+                                <Send className="mr-2 h-4 w-4" />
+                                Send Offer Letter
+                              </Button>
+                            )}
                             <Button 
                               size="sm" 
                               variant="outline"
@@ -678,10 +939,230 @@ export default function RecruiterInterviewsPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="offers" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Gift className="h-5 w-5 text-teal-500" />
+                Pending Offers
+              </CardTitle>
+              <CardDescription>Candidates who have received offer letters and are awaiting response (updates in real-time)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {offerSentInterviews.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Gift className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <h3 className="mt-4 text-lg font-semibold">No offers sent yet</h3>
+                  <p className="mt-2 text-muted-foreground">
+                    Send offer letters to candidates after successful interviews.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {offerSentInterviews.map((interview) => (
+                    <div key={interview.id} className="rounded-lg border-2 border-teal-200 dark:border-teal-800 bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-950/20 dark:to-emerald-950/20 p-4">
+                      <div className="flex items-start gap-4">
+                        <Avatar className="h-14 w-14 border-2 border-teal-500/30">
+                          {interview.avatar ? (
+                            <AvatarImage src={interview.avatar} />
+                          ) : (
+                            <AvatarFallback className="bg-gradient-to-br from-teal-500 to-emerald-500 text-white">
+                              {interview.candidate.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                            </AvatarFallback>
+                          )}
+                        </Avatar>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <Link href={`/recruiter/candidates/${interview.jobId}/${interview.applicantId}`}>
+                                <h4 className="text-lg font-semibold text-foreground hover:text-teal-600">
+                                  {interview.candidate}
+                                </h4>
+                              </Link>
+                              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Briefcase className="h-3 w-3" />
+                                {interview.position}
+                              </p>
+                            </div>
+                            <Badge className="bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/30 px-3 py-1" variant="outline">
+                              <Send className="mr-1 h-3 w-3" />
+                              Offer Sent
+                            </Badge>
+                          </div>
+
+                          {/* Offer Details */}
+                          {interview.offerLetter && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-teal-200 dark:border-teal-800">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Salary</p>
+                                <p className="font-semibold text-teal-700">{interview.offerLetter.currency} {interview.offerLetter.monthlySalary}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Joining Date</p>
+                                <p className="font-semibold">{interview.offerLetter.joiningDate}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Probation</p>
+                                <p className="font-semibold">{interview.offerLetter.probationPeriod}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Status</p>
+                                <Badge className="bg-amber-100 text-amber-700 border-amber-300">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Awaiting Response
+                                </Badge>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Calendar className="h-4 w-4" />
+                            Interview: {interview.date} at {interview.time}
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={`/recruiter/candidates/${interview.jobId}/${interview.applicantId}`}>
+                              <Button size="sm" variant="outline">
+                                <User className="mr-2 h-4 w-4" />
+                                View Profile
+                              </Button>
+                            </Link>
+                            {interview.email && (
+                              <a href={`mailto:${interview.email}`}>
+                                <Button size="sm" variant="outline">
+                                  <Mail className="mr-2 h-4 w-4" />
+                                  Contact
+                                </Button>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="declined" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ThumbsDown className="h-5 w-5 text-orange-500" />
+                Declined Offers
+              </CardTitle>
+              <CardDescription>Candidates who declined the offer letter</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {offerRejectedInterviews.length === 0 ? (
+                <div className="py-12 text-center">
+                  <ThumbsDown className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <h3 className="mt-4 text-lg font-semibold">No declined offers</h3>
+                  <p className="mt-2 text-muted-foreground">
+                    Good news! No candidates have declined offers yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {offerRejectedInterviews.map((interview) => (
+                    <div key={interview.id} className="rounded-lg border-2 border-orange-200 dark:border-orange-800 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20 p-4">
+                      <div className="flex items-start gap-4">
+                        <Avatar className="h-14 w-14 border-2 border-orange-500/30">
+                          {interview.avatar ? (
+                            <AvatarImage src={interview.avatar} />
+                          ) : (
+                            <AvatarFallback className="bg-gradient-to-br from-orange-500 to-amber-500 text-white">
+                              {interview.candidate.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                            </AvatarFallback>
+                          )}
+                        </Avatar>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <Link href={`/recruiter/candidates/${interview.jobId}/${interview.applicantId}`}>
+                                <h4 className="text-lg font-semibold text-foreground hover:text-orange-600">
+                                  {interview.candidate}
+                                </h4>
+                              </Link>
+                              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Briefcase className="h-3 w-3" />
+                                {interview.position}
+                              </p>
+                            </div>
+                            <Badge className="bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30 px-3 py-1" variant="outline">
+                              <ThumbsDown className="mr-1 h-3 w-3" />
+                              Offer Declined
+                            </Badge>
+                          </div>
+
+                          {/* Offer Details */}
+                          {interview.offerLetter && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-orange-200 dark:border-orange-800">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Salary Offered</p>
+                                <p className="font-semibold text-orange-700">{interview.offerLetter.currency} {interview.offerLetter.monthlySalary}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Joining Date</p>
+                                <p className="font-semibold">{interview.offerLetter.joiningDate}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Declined On</p>
+                                <p className="font-semibold text-orange-600">
+                                  {interview.offerLetter.respondedAt ? new Date(interview.offerLetter.respondedAt).toLocaleDateString() : "Recently"}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Calendar className="h-4 w-4" />
+                            Interview was on: {interview.date} at {interview.time}
+                          </div>
+
+                          <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-800">
+                            <p className="text-sm text-orange-700 dark:text-orange-300">
+                              💡 <strong>Tip:</strong> Consider reaching out to understand their decision, or extend an offer to the next best candidate.
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={`/recruiter/candidates/${interview.jobId}/${interview.applicantId}`}>
+                              <Button size="sm" variant="outline">
+                                <User className="mr-2 h-4 w-4" />
+                                View Profile
+                              </Button>
+                            </Link>
+                            {interview.email && (
+                              <a href={`mailto:${interview.email}`}>
+                                <Button size="sm" variant="outline">
+                                  <Mail className="mr-2 h-4 w-4" />
+                                  Contact
+                                </Button>
+                              </a>
+                            )}
+                            <Link href="/recruiter/candidates">
+                              <Button size="sm" className="bg-gradient-to-r from-blue-500 to-purple-500 hover:opacity-90">
+                                View Other Candidates
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="past" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Past Interviews</CardTitle>
+              <CardTitle>Completed Interviews</CardTitle>
               <CardDescription>Completed and concluded interviews</CardDescription>
             </CardHeader>
             <CardContent>
@@ -758,6 +1239,21 @@ export default function RecruiterInterviewsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Offer Letter Dialog */}
+      <OfferLetterDialog
+        open={offerLetterDialogOpen}
+        onOpenChange={setOfferLetterDialogOpen}
+        candidate={selectedInterviewForOffer ? {
+          name: selectedInterviewForOffer.candidate,
+          email: selectedInterviewForOffer.email,
+          avatar: selectedInterviewForOffer.avatar,
+        } : null}
+        jobTitle={selectedInterviewForOffer?.position || ""}
+        companyName={selectedInterviewForOffer?.companyName || localStorage.getItem("companyName") || "Company"}
+        onSendOffer={handleSendOffer}
+        isSending={isSendingOffer}
+      />
     </div>
   )
 }

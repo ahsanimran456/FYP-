@@ -24,8 +24,15 @@ import {
   Loader2,
   RefreshCw,
   FileText,
+  Send,
+  Gift,
+  DollarSign,
+  ThumbsUp,
+  ThumbsDown,
+  Printer,
 } from "lucide-react"
-import { collection, getDocs, onSnapshot } from "firebase/firestore"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { collection, getDocs, onSnapshot, doc, getDoc, updateDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 export default function ApplicationsPage() {
@@ -38,6 +45,11 @@ export default function ApplicationsPage() {
   const [filteredApplications, setFilteredApplications] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const printRef = useRef(null)
+  
+  // Offer letter dialog
+  const [offerDialogOpen, setOfferDialogOpen] = useState(false)
+  const [selectedOffer, setSelectedOffer] = useState(null)
+  const [isRespondingToOffer, setIsRespondingToOffer] = useState(false)
 
   // Process jobs snapshot to find user's applications
   const processJobsSnapshot = (snapshot, userId) => {
@@ -70,6 +82,8 @@ export default function ApplicationsPage() {
           // Auto-rejection info
           autoRejected: userApplication.autoRejected || false,
           autoRejectionReason: userApplication.autoRejectionReason || null,
+          // Offer letter info
+          offerLetter: userApplication.offerLetter || null,
         })
       }
     })
@@ -117,6 +131,155 @@ export default function ApplicationsPage() {
     // This will be handled by real-time listener
     setIsLoading(true)
     setTimeout(() => setIsLoading(false), 500)
+  }
+
+  // View offer letter
+  const handleViewOffer = (app) => {
+    setSelectedOffer(app)
+    setOfferDialogOpen(true)
+  }
+
+  // Respond to offer letter
+  const handleOfferResponse = async (response) => {
+    if (!selectedOffer) return
+    
+    setIsRespondingToOffer(true)
+    try {
+      const userId = localStorage.getItem("userId")
+      const userName = localStorage.getItem("userName") || localStorage.getItem("name") || "Candidate"
+      const userEmail = localStorage.getItem("userEmail") || localStorage.getItem("email")
+      const jobRef = doc(db, "jobs", selectedOffer.jobId)
+      const jobDoc = await getDoc(jobRef)
+      
+      if (!jobDoc.exists()) {
+        toast({ title: "Error", description: "Job not found", variant: "destructive" })
+        return
+      }
+      
+      const jobData = jobDoc.data()
+      const applicants = jobData.applicants || []
+      const recruiterEmail = jobData.recruiterEmail || jobData.createdByEmail
+      const companyName = jobData.companyName || selectedOffer.company
+      const jobTitle = jobData.jobtitle || jobData.title || selectedOffer.title
+      
+      // Update applicant's offer status
+      const updatedApplicants = applicants.map(app => 
+        app.applicantId === userId 
+          ? { 
+              ...app, 
+              status: response === "accept" ? "hired" : "offer_rejected",
+              offerLetter: {
+                ...app.offerLetter,
+                status: response === "accept" ? "accepted" : "rejected",
+                respondedAt: new Date().toISOString(),
+              },
+              updatedAt: new Date().toISOString(),
+            }
+          : app
+      )
+      
+      await updateDoc(jobRef, { applicants: updatedApplicants })
+      
+      // Send notification email to recruiter
+      if (recruiterEmail) {
+        await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: response === "accept" ? "offer_accepted" : "offer_declined",
+            to: recruiterEmail,
+            candidateName: userName,
+            candidateEmail: userEmail,
+            jobTitle,
+            companyName,
+          }),
+        })
+      }
+      
+      // Update local state (real-time listener will also update)
+      setApplications(prev => prev.map(app => 
+        app.jobId === selectedOffer.jobId
+          ? { 
+              ...app, 
+              status: response === "accept" ? "hired" : "offer_rejected",
+              offerLetter: {
+                ...app.applicantData?.offerLetter,
+                status: response === "accept" ? "accepted" : "rejected",
+              }
+            }
+          : app
+      ))
+      
+      toast({
+        title: response === "accept" ? "🎉 Congratulations!" : "Offer Declined",
+        description: response === "accept" 
+          ? "You have accepted the offer. Welcome aboard! The recruiter has been notified."
+          : "You have declined the offer. The recruiter has been notified.",
+        variant: response === "accept" ? "default" : "destructive",
+      })
+      
+      setOfferDialogOpen(false)
+      setSelectedOffer(null)
+    } catch (error) {
+      console.error("Error responding to offer:", error)
+      toast({
+        title: "Error",
+        description: "Failed to respond to offer. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsRespondingToOffer(false)
+    }
+  }
+
+  // Print offer letter
+  const handlePrintOffer = () => {
+    if (!selectedOffer?.applicantData?.offerLetter?.letterContent) return
+    
+    const printWindow = window.open("", "_blank")
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Offer Letter - ${selectedOffer.title}</title>
+          <style>
+            body {
+              font-family: 'Times New Roman', serif;
+              padding: 40px;
+              max-width: 800px;
+              margin: 0 auto;
+              line-height: 1.6;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              border-bottom: 2px solid #333;
+              padding-bottom: 20px;
+            }
+            .company-name {
+              font-size: 28px;
+              font-weight: bold;
+              color: #1a1a1a;
+            }
+            .content {
+              white-space: pre-wrap;
+            }
+            @media print {
+              body { padding: 20px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="company-name">${selectedOffer.company}</div>
+            <div>Official Offer Letter</div>
+          </div>
+          <div class="content">${selectedOffer.applicantData.offerLetter.letterContent.replace(/\n/g, '<br>')}</div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.print()
   }
 
   useEffect(() => {
@@ -178,7 +341,10 @@ export default function ApplicationsPage() {
         return <CheckCircle2 className="h-5 w-5 text-green-600" />
       case "applied":
         return <AlertCircle className="h-5 w-5 text-gray-600" />
+      case "offer_sent":
+        return <Gift className="h-5 w-5 text-teal-600" />
       case "rejected":
+      case "offer_rejected":
         return <XCircle className="h-5 w-5 text-red-600" />
       case "hired":
         return <CheckCircle2 className="h-5 w-5 text-emerald-600" />
@@ -195,7 +361,10 @@ export default function ApplicationsPage() {
         return "bg-green-500/10 text-green-700 dark:text-green-400"
       case "applied":
         return "bg-gray-500/10 text-gray-700 dark:text-gray-400"
+      case "offer_sent":
+        return "bg-teal-500/10 text-teal-700 dark:text-teal-400"
       case "rejected":
+      case "offer_rejected":
         return "bg-red-500/10 text-red-700 dark:text-red-400"
       case "hired":
         return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
@@ -209,6 +378,8 @@ export default function ApplicationsPage() {
       applied: "Applied",
       shortlisted: "Shortlisted",
       interview_scheduled: "Interview Scheduled",
+      offer_sent: "Offer Received",
+      offer_rejected: "Offer Declined",
       rejected: "Rejected",
       hired: "Hired",
     }
@@ -223,8 +394,12 @@ export default function ApplicationsPage() {
         return "You've been shortlisted! Interview may be scheduled soon"
       case "applied":
         return "Application submitted, waiting for review"
+      case "offer_sent":
+        return "🎉 You have received an offer! Review and respond"
       case "rejected":
         return "Position filled or not selected"
+      case "offer_rejected":
+        return "You declined this offer"
       case "hired":
         return "Congratulations! You got the job"
       default:
@@ -376,10 +551,18 @@ export default function ApplicationsPage() {
       {applications.length > 0 && (
         <div id="print-applications">
           <Tabs defaultValue="all" className="space-y-6">
-            <TabsList>
+            <TabsList className="flex-wrap">
               <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
               <TabsTrigger value="active">Active ({statusCounts.active})</TabsTrigger>
               <TabsTrigger value="interviews">Interviews ({statusCounts.interviews})</TabsTrigger>
+              <TabsTrigger value="offers" className="relative">
+                Offers ({applications.filter(a => a.status === "offer_sent").length})
+                {applications.filter(a => a.status === "offer_sent").length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-teal-500 text-[10px] text-white">
+                    !
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="hired">Hired ({statusCounts.hired})</TabsTrigger>
               <TabsTrigger value="rejected">Rejected ({statusCounts.rejected})</TabsTrigger>
             </TabsList>
@@ -478,6 +661,36 @@ export default function ApplicationsPage() {
                                     📍 {app.interviewDetails.location}
                                   </p>
                                 )}
+                              </div>
+                            )}
+                            
+                            {/* Offer Letter Received */}
+                            {app.status === "offer_sent" && app.offerLetter && (
+                              <div className="mt-2 rounded-lg bg-gradient-to-r from-teal-500/10 to-emerald-500/10 p-4 border-2 border-teal-500/30">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Gift className="h-5 w-5 text-teal-600" />
+                                  <p className="text-sm font-semibold text-teal-700 dark:text-teal-400">
+                                    🎉 You've received an offer letter!
+                                  </p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground mb-3">
+                                  <div className="flex items-center gap-1">
+                                    <DollarSign className="h-3 w-3" />
+                                    {app.offerLetter.currency} {app.offerLetter.monthlySalary}/month
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    Joining: {app.offerLetter.joiningDate}
+                                  </div>
+                                </div>
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handleViewOffer(app)}
+                                  className="w-full bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600"
+                                >
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View & Respond to Offer
+                                </Button>
                               </div>
                             )}
                           </div>
@@ -673,6 +886,85 @@ export default function ApplicationsPage() {
                 )}
             </TabsContent>
 
+            <TabsContent value="offers" className="space-y-4">
+              {applications
+                .filter((app) => app.status === "offer_sent")
+                .length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center p-12">
+                      <Gift className="h-12 w-12 text-muted-foreground" />
+                      <h2 className="mt-4 text-xl font-semibold">No offer letters</h2>
+                      <p className="mt-2 text-center text-muted-foreground">
+                        When you receive an offer letter, it will appear here.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  applications
+                    .filter((app) => app.status === "offer_sent")
+                    .map((app) => (
+                      <Card key={app.id} className="overflow-hidden border-2 border-teal-500/30 bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-950/20 dark:to-emerald-950/20">
+                        <CardContent className="p-6">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="flex gap-4">
+                              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-lg border-2 border-teal-500/30 bg-gradient-to-br from-teal-500 to-emerald-500 text-white font-bold text-xl">
+                                <Gift className="h-6 w-6" />
+                              </div>
+                              <div className="flex-1 space-y-3">
+                                <div className="flex items-start gap-2">
+                                  <div className="flex-1">
+                                    <h3 className="font-semibold text-lg text-foreground">{app.title}</h3>
+                                    <p className="text-sm text-muted-foreground">{app.company}</p>
+                                  </div>
+                                  <Badge className="bg-teal-500/10 text-teal-700 dark:text-teal-400 px-3 py-1">
+                                    <Gift className="h-3 w-3 mr-1" />
+                                    Offer Received
+                                  </Badge>
+                                </div>
+                                
+                                {/* Offer Highlights */}
+                                {app.offerLetter && (
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-white dark:bg-gray-900/50 rounded-lg border border-teal-200 dark:border-teal-800">
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Salary</p>
+                                      <p className="font-semibold text-teal-700">{app.offerLetter.currency} {app.offerLetter.monthlySalary}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Joining Date</p>
+                                      <p className="font-semibold">{app.offerLetter.joiningDate}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Probation</p>
+                                      <p className="font-semibold">{app.offerLetter.probationPeriod}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Annual Leave</p>
+                                      <p className="font-semibold">{app.offerLetter.annualLeave} days</p>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                <p className="text-sm text-teal-600 dark:text-teal-400 font-medium">
+                                  ⏰ Please review and respond to this offer
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button 
+                                onClick={() => handleViewOffer(app)}
+                                className="bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600"
+                              >
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Full Offer
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
+            </TabsContent>
+
             <TabsContent value="rejected" className="space-y-4">
               {applications
                 .filter((app) => app.status === "rejected")
@@ -754,6 +1046,137 @@ export default function ApplicationsPage() {
           </Tabs>
         </div>
       )}
+
+      {/* Offer Letter View Dialog */}
+      <Dialog open={offerDialogOpen} onOpenChange={setOfferDialogOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-emerald-500">
+                <FileText className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl">Offer Letter</DialogTitle>
+                <DialogDescription>
+                  {selectedOffer?.title} at {selectedOffer?.company}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {selectedOffer?.offerLetter && (
+            <div className="space-y-4">
+              {/* Offer Summary */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-950/20 dark:to-emerald-950/20 rounded-lg border border-teal-200 dark:border-teal-800">
+                <div>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <DollarSign className="h-3 w-3" /> Monthly Salary
+                  </p>
+                  <p className="font-bold text-lg text-teal-700">
+                    {selectedOffer.offerLetter.currency} {selectedOffer.offerLetter.monthlySalary}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3 w-3" /> Joining Date
+                  </p>
+                  <p className="font-bold text-lg">{selectedOffer.offerLetter.joiningDate}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Probation Period</p>
+                  <p className="font-semibold">{selectedOffer.offerLetter.probationPeriod}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Working Hours</p>
+                  <p className="font-semibold">{selectedOffer.offerLetter.workingHours}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Annual Leave</p>
+                  <p className="font-semibold">{selectedOffer.offerLetter.annualLeave} days</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Sick Leave</p>
+                  <p className="font-semibold">{selectedOffer.offerLetter.sickLeave} days</p>
+                </div>
+              </div>
+
+              {/* Benefits */}
+              {selectedOffer.offerLetter.benefits && (
+                <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <p className="text-sm font-semibold text-purple-700 mb-2 flex items-center gap-2">
+                    <Gift className="h-4 w-4" /> Benefits & Perks
+                  </p>
+                  <p className="text-sm text-muted-foreground">{selectedOffer.offerLetter.benefits}</p>
+                </div>
+              )}
+
+              {/* Bonuses */}
+              {selectedOffer.offerLetter.bonuses && (
+                <div className="p-4 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <p className="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" /> Bonuses & Allowances
+                  </p>
+                  <p className="text-sm text-muted-foreground">{selectedOffer.offerLetter.bonuses}</p>
+                </div>
+              )}
+
+              {/* Full Letter Content */}
+              {selectedOffer.applicantData?.offerLetter?.letterContent && (
+                <div className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-900">
+                  <div className="text-center border-b pb-4 mb-4">
+                    <h3 className="text-xl font-bold">{selectedOffer.company}</h3>
+                    <p className="text-sm text-muted-foreground">Official Offer Letter</p>
+                  </div>
+                  <div className="prose prose-sm max-w-none whitespace-pre-wrap text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {selectedOffer.applicantData.offerLetter.letterContent}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={handlePrintOffer}
+              disabled={!selectedOffer?.applicantData?.offerLetter?.letterContent}
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Print
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setOfferDialogOpen(false)}
+            >
+              Close
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => handleOfferResponse("reject")}
+              disabled={isRespondingToOffer}
+            >
+              {isRespondingToOffer ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ThumbsDown className="mr-2 h-4 w-4" />
+              )}
+              Decline Offer
+            </Button>
+            <Button
+              onClick={() => handleOfferResponse("accept")}
+              disabled={isRespondingToOffer}
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+            >
+              {isRespondingToOffer ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ThumbsUp className="mr-2 h-4 w-4" />
+              )}
+              Accept Offer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

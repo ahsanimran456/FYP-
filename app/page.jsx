@@ -110,7 +110,7 @@ export default function HomePage() {
                   </Button>
                 </Link>
                 <Link href="/signup">
-                  <Button size="lg" variant="outline" className="h-14 px-8 text-base border-2 bg-transparent hover:bg-accent/5 group">
+                  <Button size="lg" variant="outline" className="h-14 px-8 text-base border-2 bg-transparent hover:bg-muted group">
                     <Play className="mr-2 h-5 w-5 text-primary group-hover:scale-110 transition-transform" />
                     Find Your Dream Job
                   </Button>

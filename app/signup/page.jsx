@@ -306,7 +306,7 @@ export default function SignupPage() {
                         Looking for opportunities and want to apply for jobs
                       </p>
                     </div>
-                    <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-accent transition-colors" />
+                    <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                   </div>
                 </button>
 
@@ -342,7 +342,7 @@ export default function SignupPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="flex-col h-auto py-4 bg-transparent border-2 hover:bg-accent/5 hover:border-accent transition-all"
+                    className="flex-col h-auto py-4 bg-transparent border-2 hover:bg-muted hover:border-primary/50 transition-all"
                     onClick={() => handleGoogleSignup("applicant")}
                     disabled={isGoogleLoading}
                   >

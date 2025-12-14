@@ -240,7 +240,7 @@ export default function RecruiterLayout({ children }) {
                       "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                       isActive
                         ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        : "text-muted-foreground hover:bg-muted",
                     )}
                   >
                     <Icon className="h-5 w-5" />
@@ -358,14 +358,14 @@ export default function RecruiterLayout({ children }) {
                     notifications.map((notification) => (
                       <DropdownMenuItem 
                         key={notification.id} 
-                        className="flex items-start gap-3 p-3 cursor-pointer"
+                        className="flex items-start gap-3 p-3 cursor-pointer hover:bg-muted/80 focus:bg-muted/80 transition-colors"
                         onClick={() => router.push(`/recruiter/candidates?job=${notification.jobId}`)}
                       >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                          <User className="h-4 w-4 text-primary" />
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted border border-border">
+                          <User className="h-4 w-4 text-foreground" />
                         </div>
                         <div className="flex-1 space-y-1">
-                          <p className="text-sm font-medium leading-none">{notification.title}</p>
+                          <p className="text-sm font-medium leading-none text-foreground">{notification.title}</p>
                           <p className="text-xs text-muted-foreground">{notification.message}</p>
                           <p className="text-xs text-muted-foreground/70 flex items-center gap-1">
                             <Clock className="h-3 w-3" />

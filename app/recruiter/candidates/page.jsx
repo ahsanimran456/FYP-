@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { InterviewSchedulingDialog } from "@/components/interview-scheduling-dialog"
+import { OfferLetterDialog } from "@/components/offer-letter-dialog"
 import {
   Search,
   Star,
@@ -41,6 +42,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Filter,
+  Send,
 } from "lucide-react"
 import { collection, query, where, getDocs, doc, updateDoc, getDoc, onSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
@@ -74,11 +76,20 @@ export default function CandidatesPage() {
   const [candidateToInterview, setCandidateToInterview] = useState(null)
   const [isSchedulingInterview, setIsSchedulingInterview] = useState(false)
   
+  // Offer letter dialog
+  const [offerLetterDialogOpen, setOfferLetterDialogOpen] = useState(false)
+  const [candidateForOffer, setCandidateForOffer] = useState(null)
+  const [isSendingOffer, setIsSendingOffer] = useState(false)
+  
   // Status update loading state (tracks which candidate is being updated)
   const [updatingStatus, setUpdatingStatus] = useState({})
   
   // Ref to prevent duplicate auto-scoring runs
   const autoScoringRef = useRef(false)
+  
+  // Ref for tracking offer status changes (real-time notifications)
+  const prevCandidatesRef = useRef([])
+  const isFirstLoadRef = useRef(true)
 
   // Parse PDF and get text
   const parsePDF = async (pdfUrl) => {
@@ -234,11 +245,29 @@ export default function CandidatesPage() {
       await updateDoc(jobRef, { applicants: updatedApplicants })
       console.log(`🚫 Auto-rejected in Firestore: ${applicantId} (Score: ${score}%, Confidence: ${confidence}%)`)
       
-      // Send rejection email automatically
+      // Send rejection email automatically with Reply-To set to recruiter
       if (candidateEmail) {
         try {
-          await sendEmail("rejected", { name: candidateName, email: candidateEmail }, jobTitle, companyName)
-          console.log(`📧 Rejection email sent to ${candidateEmail}`)
+          const recruiterEmail = localStorage.getItem("userEmail") || localStorage.getItem("email")
+          const recruiterName = localStorage.getItem("userName") || localStorage.getItem("name")
+          
+          const emailResponse = await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "rejected",
+              to: candidateEmail,
+              candidateName: candidateName,
+              jobTitle,
+              companyName,
+              recruiterEmail,
+              recruiterName,
+            }),
+          })
+          const emailData = await emailResponse.json()
+          if (emailData.success) {
+            console.log(`📧 Rejection email sent to ${candidateEmail} (Reply-To: ${recruiterEmail})`)
+          }
         } catch (emailError) {
           console.error("Failed to send rejection email:", emailError)
         }
@@ -498,6 +527,8 @@ export default function CandidatesPage() {
           autoRejected: applicant.autoRejected || false,
           autoRejectedAt: applicant.autoRejectedAt,
           autoRejectionReason: applicant.autoRejectionReason,
+          // Offer letter data
+          offerLetter: applicant.offerLetter || null,
         })
       })
     })
@@ -527,6 +558,37 @@ export default function CandidatesPage() {
       
       // Sort by applied date (newest first)
       allCandidates.sort((a, b) => new Date(b.appliedDate) - new Date(a.appliedDate))
+      
+      // Check for offer status changes (real-time notifications)
+      if (!isFirstLoadRef.current && prevCandidatesRef.current.length > 0) {
+        allCandidates.forEach(candidate => {
+          const prevCandidate = prevCandidatesRef.current.find(
+            p => p.jobId === candidate.jobId && p.applicantId === candidate.applicantId
+          )
+          
+          // Offer accepted - candidate became hired from offer_sent
+          if (prevCandidate?.status === "offer_sent" && candidate.status === "hired") {
+            toast({
+              title: "🎉 Offer Accepted!",
+              description: `${candidate.name} has accepted the offer for ${candidate.position}! Congratulations on your new hire!`,
+              duration: 10000,
+            })
+          }
+          
+          // Offer rejected
+          if (prevCandidate?.status === "offer_sent" && candidate.status === "offer_rejected") {
+            toast({
+              title: "📋 Offer Declined",
+              description: `${candidate.name} has declined the offer for ${candidate.position}. Consider other candidates.`,
+              variant: "destructive",
+              duration: 10000,
+            })
+          }
+        })
+      }
+      
+      isFirstLoadRef.current = false
+      prevCandidatesRef.current = allCandidates
       
       setJobs(jobsList)
       setJobsData(jobsFullData)
@@ -562,9 +624,13 @@ export default function CandidatesPage() {
     setTimeout(() => setIsLoading(false), 500)
   }
 
-  // Send email notification
+  // Send email notification with Reply-To set to recruiter's email
   const sendEmail = async (type, candidate, jobTitle, companyName, interviewDetails = null) => {
     try {
+      // Get recruiter's email from localStorage (set during login)
+      const recruiterEmail = localStorage.getItem("userEmail") || localStorage.getItem("email")
+      const recruiterName = localStorage.getItem("userName") || localStorage.getItem("name")
+      
       const response = await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -575,11 +641,17 @@ export default function CandidatesPage() {
           jobTitle,
           companyName: companyName || localStorage.getItem("companyName") || "Company",
           interviewDetails,
+          // Include recruiter's email so replies go to them
+          recruiterEmail,
+          recruiterName,
         }),
       })
       const data = await response.json()
       if (data.success) {
         console.log("Email sent:", data.message)
+        if (data.replyTo) {
+          console.log("Reply-To set to:", data.replyTo)
+        }
       }
     } catch (error) {
       console.error("Error sending email:", error)
@@ -696,6 +768,109 @@ export default function CandidatesPage() {
     }
   }
 
+  // Handle send offer letter click
+  const handleSendOfferClick = (candidate) => {
+    setCandidateForOffer(candidate)
+    setOfferLetterDialogOpen(true)
+  }
+
+  // Send offer letter
+  const handleSendOffer = async (offerDetails) => {
+    if (!candidateForOffer) return
+    
+    setIsSendingOffer(true)
+    try {
+      const jobRef = doc(db, "jobs", candidateForOffer.jobId)
+      const jobDoc = await getDoc(jobRef)
+      
+      if (!jobDoc.exists()) {
+        toast({ title: "Error", description: "Job not found", variant: "destructive" })
+        return
+      }
+      
+      const jobData = jobDoc.data()
+      const applicants = jobData.applicants || []
+      const jobTitle = jobData.jobtitle || jobData.title || "Position"
+      const companyName = jobData.companyName || localStorage.getItem("companyName") || "Company"
+      
+      // Format joining date for display
+      const joiningDateFormatted = new Date(offerDetails.joiningDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+      
+      // Update applicant with offer letter details
+      const updatedApplicants = applicants.map(app => 
+        app.applicantId === candidateForOffer.applicantId 
+          ? { 
+              ...app, 
+              status: "offer_sent",
+              offerLetter: {
+                ...offerDetails,
+                joiningDate: joiningDateFormatted,
+                rawJoiningDate: offerDetails.joiningDate,
+                sentAt: new Date().toISOString(),
+                status: "pending", // pending, accepted, rejected
+              },
+              updatedAt: new Date().toISOString(),
+            }
+          : app
+      )
+      
+      await updateDoc(jobRef, { applicants: updatedApplicants })
+      
+      // Update local state
+      setCandidates(prev => prev.map(c => 
+        c.jobId === candidateForOffer.jobId && c.applicantId === candidateForOffer.applicantId
+          ? { ...c, status: "offer_sent", offerLetter: { ...offerDetails, status: "pending" } }
+          : c
+      ))
+      
+      // Send email notification
+      if (candidateForOffer.email) {
+        const recruiterEmail = localStorage.getItem("userEmail") || localStorage.getItem("email")
+        const recruiterName = localStorage.getItem("userName") || localStorage.getItem("name")
+        
+        await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "offer_letter",
+            to: candidateForOffer.email,
+            candidateName: candidateForOffer.name,
+            jobTitle,
+            companyName,
+            interviewDetails: {
+              ...offerDetails,
+              joiningDate: joiningDateFormatted,
+            },
+            recruiterEmail,
+            recruiterName,
+          }),
+        })
+      }
+      
+      toast({
+        title: "🎉 Offer Letter Sent!",
+        description: `Offer letter sent to ${candidateForOffer.name}. They will be notified via email.`,
+      })
+      
+      setOfferLetterDialogOpen(false)
+      setCandidateForOffer(null)
+    } catch (error) {
+      console.error("Error sending offer:", error)
+      toast({
+        title: "Error",
+        description: "Failed to send offer letter. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingOffer(false)
+    }
+  }
+
   // Confirm shortlist
   const confirmShortlist = async () => {
     if (!candidateToShortlist) return
@@ -780,6 +955,8 @@ export default function CandidatesPage() {
       case "reviewed": return "bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20"
       case "shortlisted": return "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
       case "interview_scheduled": return "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20"
+      case "offer_sent": return "bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/20"
+      case "offer_rejected": return "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20"
       case "rejected": return "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"
       case "hired": return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
       default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20"
@@ -791,6 +968,8 @@ export default function CandidatesPage() {
       case "applied": return <Clock className="mr-1 h-3 w-3" />
       case "shortlisted": return <Star className="mr-1 h-3 w-3" />
       case "interview_scheduled": return <CheckCircle2 className="mr-1 h-3 w-3" />
+      case "offer_sent": return <Send className="mr-1 h-3 w-3" />
+      case "offer_rejected": return <XCircle className="mr-1 h-3 w-3" />
       case "rejected": return <XCircle className="mr-1 h-3 w-3" />
       case "hired": return <CheckCircle2 className="mr-1 h-3 w-3" />
       default: return <Clock className="mr-1 h-3 w-3" />
@@ -803,6 +982,8 @@ export default function CandidatesPage() {
       reviewed: "Reviewed",
       shortlisted: "Shortlisted",
       interview_scheduled: "Interview",
+      offer_sent: "Offer Sent",
+      offer_rejected: "Offer Declined",
       rejected: "Rejected",
       hired: "Hired",
     }
@@ -1545,18 +1726,43 @@ export default function CandidatesPage() {
                           )}
                           
                           {candidate.status === "interview_scheduled" && (
-                            <Button 
-                              onClick={() => updateApplicantStatus(candidate.jobId, candidate.applicantId, "hired")}
-                              disabled={updatingStatus[`${candidate.jobId}_${candidate.applicantId}`] || autoScoringStatus.running}
-                              className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:opacity-90"
-                            >
-                              {updatingStatus[`${candidate.jobId}_${candidate.applicantId}`] ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                            <>
+                              <Button 
+                                onClick={() => handleSendOfferClick(candidate)}
+                                disabled={autoScoringStatus.running}
+                                className="bg-gradient-to-r from-teal-500 to-emerald-500 hover:opacity-90"
+                              >
+                                <Send className="mr-2 h-4 w-4" />
+                                Send Offer Letter
+                              </Button>
+                              <Button 
+                                onClick={() => updateApplicantStatus(candidate.jobId, candidate.applicantId, "hired")}
+                                disabled={updatingStatus[`${candidate.jobId}_${candidate.applicantId}`] || autoScoringStatus.running}
+                                className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:opacity-90"
+                              >
+                                {updatingStatus[`${candidate.jobId}_${candidate.applicantId}`] ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                                )}
+                                {updatingStatus[`${candidate.jobId}_${candidate.applicantId}`] ? "Hiring..." : "Mark Hired"}
+                              </Button>
+                            </>
+                          )}
+                          
+                          {/* Show for offer_sent status - offer already sent, awaiting response */}
+                          {candidate.status === "offer_sent" && (
+                            <div className="flex items-center gap-2">
+                              <Badge className="bg-teal-100 text-teal-700 border-teal-300 px-3 py-1.5 text-sm">
+                                <Send className="h-3.5 w-3.5 mr-1.5" />
+                                Offer Sent - Awaiting Response
+                              </Badge>
+                              {candidate.offerLetter?.sentAt && (
+                                <span className="text-xs text-muted-foreground">
+                                  Sent {new Date(candidate.offerLetter.sentAt).toLocaleDateString()}
+                                </span>
                               )}
-                              {updatingStatus[`${candidate.jobId}_${candidate.applicantId}`] ? "Hiring..." : "Hire"}
-                            </Button>
+                            </div>
                           )}
                           
                           {candidate.resumeUrl && (
@@ -1777,6 +1983,21 @@ export default function CandidatesPage() {
         jobTitle={candidateToInterview?.position || ""}
         onSchedule={handleScheduleInterview}
         isScheduling={isSchedulingInterview || autoScoringStatus.running}
+      />
+
+      {/* Offer Letter Dialog */}
+      <OfferLetterDialog
+        open={offerLetterDialogOpen && !autoScoringStatus.running}
+        onOpenChange={(open) => !autoScoringStatus.running && setOfferLetterDialogOpen(open)}
+        candidate={candidateForOffer ? {
+          name: candidateForOffer.name,
+          email: candidateForOffer.email,
+          avatar: candidateForOffer.avatar,
+        } : null}
+        jobTitle={candidateForOffer?.position || ""}
+        companyName={localStorage.getItem("companyName") || "Company"}
+        onSendOffer={handleSendOffer}
+        isSending={isSendingOffer}
       />
     </div>
   )
