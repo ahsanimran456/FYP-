@@ -77,6 +77,7 @@ export default function JobsPage() {
             type: data.type || "full-time",
             experience: data.experience || "mid",
             posted: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.postedDate)),
+            createdAt: data.createdAt?.toDate?.() || new Date(data.postedDate) || new Date(),
             applicants: applicantsArray.length,
             views: data.views || 0,
             skills: data.skills || [],
@@ -92,8 +93,12 @@ export default function JobsPage() {
       
       setAppliedJobs(appliedJobIds)
       
-      // Sort by most recent
-      jobsData.sort((a, b) => new Date(b.postedDate) - new Date(a.postedDate))
+      // Sort by most recent (newest jobs first)
+      jobsData.sort((a, b) => {
+        const dateA = a.createdAt || new Date(0)
+        const dateB = b.createdAt || new Date(0)
+        return dateB - dateA
+      })
       
       setJobs(jobsData)
       setFilteredJobs(jobsData)

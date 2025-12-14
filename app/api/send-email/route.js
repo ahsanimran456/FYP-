@@ -66,9 +66,30 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
       }
 
     case "interview":
-      const { type: interviewType, date, time, link, phone, location, notes } = interviewDetails || {}
+      const { type: interviewType, date, time, rawDate, rawTime, link, phone, location, notes } = interviewDetails || {}
       let meetingInfo = ""
       let meetingIcon = "📅"
+      
+      // Format date if it's in raw format (YYYY-MM-DD)
+      let displayDate = date
+      if (rawDate && !date.includes(",")) {
+        const dateObj = new Date(rawDate)
+        displayDate = dateObj.toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
+      }
+      
+      // Format time if it's in 24-hour format (HH:MM)
+      let displayTime = time
+      if (rawTime && !time.includes("AM") && !time.includes("PM")) {
+        const [hours, minutes] = rawTime.split(":").map(Number)
+        const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+        const ampm = hours < 12 ? "AM" : "PM"
+        displayTime = `${hour12}:${minutes.toString().padStart(2, "0")} ${ampm}`
+      }
       
       if (interviewType === "google_meet") {
         meetingInfo = `<p style="margin: 8px 0;"><strong>📹 Google Meet:</strong> <a href="${link}" style="color: #8b5cf6;">${link}</a></p>`
@@ -77,7 +98,7 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
         meetingInfo = `<p style="margin: 8px 0;"><strong>📹 Zoom Meeting:</strong> <a href="${link}" style="color: #8b5cf6;">${link}</a></p>`
         meetingIcon = "📹"
       } else if (interviewType === "phone") {
-        meetingInfo = `<p style="margin: 8px 0;"><strong>📞 Phone Call:</strong> We will call you at your registered number</p>`
+        meetingInfo = `<p style="margin: 8px 0;"><strong>📞 Phone Call:</strong> We will call you at your registered number${phone ? ` (${phone})` : ""}</p>`
         meetingIcon = "📞"
       } else if (interviewType === "onsite") {
         meetingInfo = `<p style="margin: 8px 0;"><strong>🏢 Location:</strong> ${location || "Our office (details will be shared)"}</p>`
@@ -101,11 +122,11 @@ const getEmailContent = (type, candidateName, jobTitle, companyName, interviewDe
                 <table style="width: 100%; border-collapse: collapse;">
                   <tr>
                     <td style="padding: 8px 0; color: #6b7280; width: 100px;">📆 Date:</td>
-                    <td style="padding: 8px 0; font-weight: bold; color: #1f2937;">${date}</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #1f2937;">${displayDate}</td>
                   </tr>
                   <tr>
                     <td style="padding: 8px 0; color: #6b7280;">⏰ Time:</td>
-                    <td style="padding: 8px 0; font-weight: bold; color: #1f2937;">${time}</td>
+                    <td style="padding: 8px 0; font-weight: bold; color: #1f2937;">${displayTime}</td>
                   </tr>
                 </table>
                 ${meetingInfo}

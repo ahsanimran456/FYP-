@@ -5,6 +5,14 @@ import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -44,6 +52,10 @@ export default function ApplyJobPage() {
   const [resumeUrl, setResumeUrl] = useState("")
   const [resumeName, setResumeName] = useState("")
   const [userId, setUserId] = useState(null)
+  
+  // Validation dialog state
+  const [showValidationDialog, setShowValidationDialog] = useState(false)
+  const [validationErrors, setValidationErrors] = useState([])
   
   const [formData, setFormData] = useState({
     firstName: "",
@@ -180,6 +192,35 @@ export default function ApplyJobPage() {
         description: "Missing required data. Please refresh and try again.",
         variant: "destructive",
       })
+      return
+    }
+
+    // Validate required fields
+    const errors = []
+    
+    // Check basic information
+    if (!formData.firstName || formData.firstName.trim() === "") {
+      errors.push("First Name")
+    }
+    if (!formData.lastName || formData.lastName.trim() === "") {
+      errors.push("Last Name")
+    }
+    if (!formData.email || formData.email.trim() === "") {
+      errors.push("Email Address")
+    }
+    if (!formData.phone || formData.phone.trim() === "") {
+      errors.push("Phone Number")
+    }
+    
+    // Check CV/Resume - MANDATORY
+    if (!resumeUrl) {
+      errors.push("CV/Resume")
+    }
+    
+    // If there are validation errors, show dialog
+    if (errors.length > 0) {
+      setValidationErrors(errors)
+      setShowValidationDialog(true)
       return
     }
 
@@ -791,6 +832,58 @@ export default function ApplyJobPage() {
           </CardContent>
         </Card>
       </form>
+
+      {/* Validation Dialog - Missing Required Info */}
+      <Dialog open={showValidationDialog} onOpenChange={setShowValidationDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Required Information Missing
+            </DialogTitle>
+            <DialogDescription>
+              Please complete the following required fields before submitting your application:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {validationErrors.map((error, index) => (
+              <div key={index} className="flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-100">
+                  {error === "CV/Resume" ? (
+                    <FileText className="h-4 w-4 text-orange-600" />
+                  ) : (
+                    <User className="h-4 w-4 text-orange-600" />
+                  )}
+                </div>
+                <span className="font-medium text-orange-800">{error}</span>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowValidationDialog(false)}>
+              Go Back & Complete
+            </Button>
+            {validationErrors.includes("CV/Resume") && validationErrors.length === 1 && (
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => {
+                    handleCVUpload(e)
+                    setShowValidationDialog(false)
+                  }}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  disabled={isUploadingCV}
+                />
+                <Button>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload CV Now
+                </Button>
+              </div>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

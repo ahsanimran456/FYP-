@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Video,
@@ -25,6 +26,33 @@ import {
   Mail,
   Link as LinkIcon,
 } from "lucide-react"
+
+// Generate time slots in 12-hour format with AM/PM
+const generateTimeSlots = () => {
+  const slots = []
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute = 0; minute < 60; minute += 30) {
+      const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+      const ampm = hour < 12 ? "AM" : "PM"
+      const minuteStr = minute.toString().padStart(2, "0")
+      const display = `${hour12}:${minuteStr} ${ampm}`
+      const value24 = `${hour.toString().padStart(2, "0")}:${minuteStr}`
+      slots.push({ display, value24, hour, minute, ampm })
+    }
+  }
+  return slots
+}
+
+const timeSlots = generateTimeSlots()
+
+// Convert 24-hour time to 12-hour format with AM/PM
+const formatTimeTo12Hour = (time24) => {
+  if (!time24) return ""
+  const [hours, minutes] = time24.split(":").map(Number)
+  const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+  const ampm = hours < 12 ? "AM" : "PM"
+  return `${hour12}:${minutes.toString().padStart(2, "0")} ${ampm}`
+}
 
 const interviewTypes = [
   {
@@ -78,10 +106,24 @@ export function InterviewSchedulingDialog({
   const [notes, setNotes] = useState("")
 
   const handleSchedule = () => {
+    // Format time to 12-hour with AM/PM
+    const formattedTime = formatTimeTo12Hour(time)
+    
+    // Format date to readable format
+    const dateObj = new Date(date)
+    const formattedDate = dateObj.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })
+    
     const interviewDetails = {
       type: interviewType,
-      date,
-      time,
+      date: formattedDate,         // Formatted date (e.g., "Monday, January 15, 2024")
+      rawDate: date,               // Raw date for sorting (e.g., "2024-01-15")
+      time: formattedTime,         // Formatted time with AM/PM (e.g., "2:30 PM")
+      rawTime: time,               // Raw 24-hour time (e.g., "14:30")
       link: meetingLink,
       phone: phoneNumber || candidate?.phone || "",
       location,
@@ -209,13 +251,20 @@ export function InterviewSchedulingDialog({
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 Time
               </Label>
-              <Input
-                id="time"
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full"
-              />
+              <Select value={time} onValueChange={setTime}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select time">
+                    {time ? formatTimeTo12Hour(time) : "Select time"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {timeSlots.map((slot) => (
+                    <SelectItem key={slot.value24} value={slot.value24}>
+                      {slot.display}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

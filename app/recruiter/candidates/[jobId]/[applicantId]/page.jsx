@@ -1,14 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
+import { Progress } from "@/components/ui/progress"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { InterviewSchedulingDialog } from "@/components/interview-scheduling-dialog"
@@ -31,16 +32,18 @@ import {
   Star,
   ExternalLink,
   Building,
-  Sparkles,
   Zap,
   Brain,
-  Video,
+  Shield,
+  TrendingUp,
+  AlertTriangle,
+  Target,
+  Award,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
-
-// Cache key for localStorage
-const SCORE_CACHE_KEY = "ai_candidate_scores"
 
 export default function CandidateDetailPage() {
   const router = useRouter()
@@ -50,10 +53,6 @@ export default function CandidateDetailPage() {
   const [job, setJob] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
-  
-  // AI Scoring states
-  const [aiScore, setAiScore] = useState(null)
-  const [isScoring, setIsScoring] = useState(false)
   
   // Shortlist confirmation dialog
   const [shortlistDialogOpen, setShortlistDialogOpen] = useState(false)
@@ -67,165 +66,6 @@ export default function CandidateDetailPage() {
   const jobId = params?.jobId
   const applicantId = params?.applicantId
 
-  // Load cached score from localStorage
-  const loadCachedScore = useCallback((jId, aId) => {
-    try {
-      const cached = localStorage.getItem(SCORE_CACHE_KEY)
-      if (cached) {
-        const parsed = JSON.parse(cached)
-        const cacheKey = `${jId}_${aId}`
-        if (parsed[cacheKey]) {
-          return parsed[cacheKey]
-        }
-      }
-    } catch (error) {
-      console.error("Error loading cached score:", error)
-    }
-    return null
-  }, [])
-
-  // Save score to localStorage
-  const saveCachedScore = useCallback((jId, aId, scoreData) => {
-    try {
-      const cached = localStorage.getItem(SCORE_CACHE_KEY)
-      const parsed = cached ? JSON.parse(cached) : {}
-      const cacheKey = `${jId}_${aId}`
-      parsed[cacheKey] = scoreData
-      localStorage.setItem(SCORE_CACHE_KEY, JSON.stringify(parsed))
-    } catch (error) {
-      console.error("Error saving cached score:", error)
-    }
-  }, [])
-
-  // Parse PDF and get text (with fallback)
-  const parsePDF = async (pdfUrl) => {
-    try {
-      const response = await fetch("/api/parse-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdfUrl }),
-      })
-      const data = await response.json()
-      if (data.success && data.text) {
-        return data.text
-      }
-      // Fallback: return empty string if parsing fails
-      console.log("PDF parsing failed, proceeding without CV text")
-      return ""
-    } catch (error) {
-      console.error("PDF Parse Error:", error)
-      // Continue scoring without CV text
-      return ""
-    }
-  }
-
-  // Score candidate with AI
-  const scoreCandidate = async () => {
-    if (!candidate || !job || isScoring) return
-    
-    setIsScoring(true)
-    
-    try {
-      // Parse CV if available
-      let cvText = ""
-      if (candidate.resumeUrl) {
-        toast({
-          title: "Parsing CV...",
-          description: "Extracting text from resume",
-        })
-        cvText = await parsePDF(candidate.resumeUrl)
-      }
-
-      toast({
-        title: "AI Scoring...",
-        description: "Analyzing candidate profile",
-      })
-
-      // Call scoring API
-      const response = await fetch("/api/score-candidate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          candidate: {
-            applicantId: candidate.applicantId,
-            name: candidate.applicantName,
-            currentTitle: candidate.currentTitle,
-            experience: candidate.yearsOfExperience,
-            location: candidate.applicantLocation,
-            skills: candidate.skills,
-            education: candidate.education,
-          },
-          job: {
-            title: job.title,
-            skills: job.skills,
-            experience: job.experience,
-            location: job.location,
-            requirements: job.requirements,
-          },
-          cvText,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        const scoreData = {
-          score: data.score,
-          reason: data.reason,
-          timestamp: Date.now(),
-        }
-        
-        // Update state
-        setAiScore(scoreData)
-        
-        // Save to localStorage
-        saveCachedScore(jobId, applicantId, scoreData)
-
-        // Save to Firestore
-        await saveScoreToFirestore(data.score, data.reason)
-
-        toast({
-          title: "AI Score Generated! 🎯",
-          description: `Score: ${data.score}/100 - ${data.reason}`,
-        })
-      } else {
-        throw new Error(data.error || "Scoring failed")
-      }
-    } catch (error) {
-      console.error("Scoring Error:", error)
-      toast({
-        title: "Scoring Failed",
-        description: error.message || "Failed to score candidate",
-        variant: "destructive",
-      })
-    } finally {
-      setIsScoring(false)
-    }
-  }
-
-  // Save score to Firestore
-  const saveScoreToFirestore = async (score, reason) => {
-    try {
-      const jobRef = doc(db, "jobs", jobId)
-      const jobDoc = await getDoc(jobRef)
-      
-      if (jobDoc.exists()) {
-        const jobData = jobDoc.data()
-        const applicants = jobData.applicants || []
-        
-        const updatedApplicants = applicants.map(app => 
-          app.applicantId === applicantId 
-            ? { ...app, aiScore: score, aiScoreReason: reason, aiScoredAt: new Date().toISOString() }
-            : app
-        )
-        
-        await updateDoc(jobRef, { applicants: updatedApplicants })
-      }
-    } catch (error) {
-      console.error("Error saving score to Firestore:", error)
-    }
-  }
-
   // Get score color based on value
   const getScoreColor = (score) => {
     if (score >= 80) return "text-emerald-600 bg-emerald-500/10 border-emerald-500/30"
@@ -235,16 +75,43 @@ export default function CandidateDetailPage() {
     return "text-red-600 bg-red-500/10 border-red-500/30"
   }
 
+  const getScoreBgColor = (score) => {
+    if (score >= 80) return "bg-emerald-500"
+    if (score >= 60) return "bg-green-500"
+    if (score >= 40) return "bg-yellow-500"
+    if (score >= 20) return "bg-orange-500"
+    return "bg-red-500"
+  }
+
+  const getConfidenceColor = (confidence) => {
+    if (confidence >= 95) return "bg-emerald-500 text-white"
+    if (confidence >= 90) return "bg-green-500 text-white"
+    if (confidence >= 85) return "bg-blue-500 text-white"
+    return "bg-gray-500 text-white"
+  }
+
+  const getRecommendationBadge = (recommendation) => {
+    switch (recommendation) {
+      case "STRONG_MATCH":
+        return { text: "Strong Match", color: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30", icon: ThumbsUp }
+      case "GOOD_MATCH":
+        return { text: "Good Match", color: "bg-green-500/10 text-green-700 border-green-500/30", icon: ThumbsUp }
+      case "CONSIDER":
+        return { text: "Consider", color: "bg-yellow-500/10 text-yellow-700 border-yellow-500/30", icon: Target }
+      case "NOT_RECOMMENDED":
+        return { text: "Not Recommended", color: "bg-red-500/10 text-red-700 border-red-500/30", icon: ThumbsDown }
+      default:
+        return { text: "Pending", color: "bg-gray-500/10 text-gray-700 border-gray-500/30", icon: Clock }
+    }
+  }
+
   // Fetch candidate and job data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true)
         
-        console.log("Fetching candidate data:", { jobId, applicantId })
-
         if (!jobId || !applicantId) {
-          console.log("Missing params:", { jobId, applicantId })
           toast({
             title: "Invalid URL",
             description: "Missing job or applicant ID.",
@@ -252,12 +119,6 @@ export default function CandidateDetailPage() {
           })
           router.push("/recruiter/candidates")
           return
-        }
-
-        // Load cached score first
-        const cachedScore = loadCachedScore(jobId, applicantId)
-        if (cachedScore) {
-          setAiScore(cachedScore)
         }
 
         // Fetch job document
@@ -284,11 +145,11 @@ export default function CandidateDetailPage() {
           skills: jobData.skills || [],
           experience: jobData.experience || "",
           requirements: jobData.requirements || [],
+          description: jobData.description || "",
         })
 
         // Find the applicant in the job's applicants array
         const applicantsArray = jobData.applicants || []
-        console.log("Applicants in job:", applicantsArray.length, "Looking for:", applicantId)
         const applicantData = applicantsArray.find(a => a.applicantId === applicantId)
 
         if (!applicantData) {
@@ -301,21 +162,11 @@ export default function CandidateDetailPage() {
           return
         }
 
+        // Set candidate with all AI screening data from Firestore
         setCandidate({
           ...applicantData,
           jobId: jobId,
         })
-
-        // Check if score exists in Firestore (from previous scoring)
-        if (applicantData.aiScore !== undefined && !cachedScore) {
-          const scoreData = {
-            score: applicantData.aiScore,
-            reason: applicantData.aiScoreReason || "",
-            timestamp: new Date(applicantData.aiScoredAt || Date.now()).getTime(),
-          }
-          setAiScore(scoreData)
-          saveCachedScore(jobId, applicantId, scoreData)
-        }
 
         console.log("✅ Candidate loaded:", applicantData.applicantName)
 
@@ -326,7 +177,6 @@ export default function CandidateDetailPage() {
           description: "Failed to load candidate data.",
           variant: "destructive",
         })
-        setIsLoading(false)
       } finally {
         setIsLoading(false)
       }
@@ -335,9 +185,8 @@ export default function CandidateDetailPage() {
     if (jobId && applicantId) {
       fetchData()
     }
-  }, [jobId, applicantId, router, toast, loadCachedScore, saveCachedScore])
+  }, [jobId, applicantId, router, toast])
 
-  // Update applicant status
   // Send email notification
   const sendEmail = async (type, candidateData, jobTitle, companyName, interviewDetails = null) => {
     try {
@@ -367,16 +216,14 @@ export default function CandidateDetailPage() {
     
     setIsUpdating(true)
     try {
-      // Get current job document
       const jobDoc = await getDoc(doc(db, "jobs", job.id))
       if (!jobDoc.exists()) return
 
       const jobData = jobDoc.data()
       const applicants = jobData.applicants || []
       const companyName = jobData.companyName || localStorage.getItem("companyName") || "Company"
-      const jobTitle = job.title || job.jobtitle || "Position"
+      const jobTitle = job.title || "Position"
 
-      // Update the specific applicant's status
       const updatedApplicants = applicants.map(app =>
         app.applicantId === candidate.applicantId
           ? { 
@@ -392,7 +239,6 @@ export default function CandidateDetailPage() {
         applicants: updatedApplicants,
       })
 
-      // Update local state
       setCandidate(prev => ({ ...prev, status: newStatus, interviewDetails }))
 
       // Send email based on status
@@ -466,24 +312,16 @@ export default function CandidateDetailPage() {
   // Get status color
   const getStatusColor = (status) => {
     switch (status) {
-      case "applied":
-        return "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20"
-      case "reviewed":
-        return "bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20"
-      case "shortlisted":
-        return "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
-      case "interview_scheduled":
-        return "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20"
-      case "hired":
-        return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
-      case "rejected":
-        return "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"
-      default:
-        return "bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20"
+      case "applied": return "bg-blue-500/10 text-blue-700 border-blue-500/20"
+      case "reviewed": return "bg-gray-500/10 text-gray-700 border-gray-500/20"
+      case "shortlisted": return "bg-green-500/10 text-green-700 border-green-500/20"
+      case "interview_scheduled": return "bg-purple-500/10 text-purple-700 border-purple-500/20"
+      case "hired": return "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+      case "rejected": return "bg-red-500/10 text-red-700 border-red-500/20"
+      default: return "bg-gray-500/10 text-gray-700 border-gray-500/20"
     }
   }
 
-  // Get status label
   const getStatusLabel = (status) => {
     const labels = {
       applied: "Applied",
@@ -496,25 +334,17 @@ export default function CandidateDetailPage() {
     return labels[status] || status
   }
 
-  // Get status icon
   const getStatusIcon = (status) => {
     switch (status) {
-      case "applied":
-        return <Clock className="mr-1 h-3 w-3" />
-      case "shortlisted":
-        return <Star className="mr-1 h-3 w-3" />
-      case "interview_scheduled":
-        return <Calendar className="mr-1 h-3 w-3" />
-      case "hired":
-        return <CheckCircle2 className="mr-1 h-3 w-3" />
-      case "rejected":
-        return <XCircle className="mr-1 h-3 w-3" />
-      default:
-        return <Clock className="mr-1 h-3 w-3" />
+      case "applied": return <Clock className="mr-1 h-3 w-3" />
+      case "shortlisted": return <Star className="mr-1 h-3 w-3" />
+      case "interview_scheduled": return <Calendar className="mr-1 h-3 w-3" />
+      case "hired": return <CheckCircle2 className="mr-1 h-3 w-3" />
+      case "rejected": return <XCircle className="mr-1 h-3 w-3" />
+      default: return <Clock className="mr-1 h-3 w-3" />
     }
   }
 
-  // Get education label
   const getEducationLabel = (edu) => {
     const labels = {
       "high-school": "High School",
@@ -528,7 +358,6 @@ export default function CandidateDetailPage() {
     return labels[edu] || edu || "Not specified"
   }
 
-  // Get experience label
   const getExperienceLabel = (exp) => {
     const labels = {
       "0-1": "Less than 1 year",
@@ -541,7 +370,6 @@ export default function CandidateDetailPage() {
     return labels[exp] || exp || "Not specified"
   }
 
-  // Format date
   const formatDate = (dateStr) => {
     try {
       return new Date(dateStr).toLocaleDateString("en-US", {
@@ -581,6 +409,9 @@ export default function CandidateDetailPage() {
     )
   }
 
+  const recommendationInfo = getRecommendationBadge(candidate.aiRecommendation)
+  const RecommendationIcon = recommendationInfo.icon
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -589,53 +420,246 @@ export default function CandidateDetailPage() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Candidates
         </Button>
-        
-        {/* AI Score Button */}
-        {aiScore?.score === undefined && (
-          <Button
-            onClick={scoreCandidate}
-            disabled={isScoring}
-            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-          >
-            {isScoring ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <Brain className="mr-2 h-4 w-4" />
-                Generate AI Score
-              </>
-            )}
-          </Button>
-        )}
       </div>
 
-      {/* AI Score Display Card */}
-      {aiScore?.score !== undefined && (
-        <Card className={`border-2 ${getScoreColor(aiScore.score)}`}>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-5">
-              {/* Score Circle */}
-              <div className={`flex h-20 w-20 flex-shrink-0 flex-col items-center justify-center rounded-full border-4 ${getScoreColor(aiScore.score)}`}>
-                <Zap className="h-5 w-5" />
-                <span className="text-2xl font-bold">{aiScore.score}</span>
-              </div>
-              
-              {/* Score Details */}
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Brain className="h-5 w-5 text-purple-500" />
-                  <h3 className="text-lg font-semibold text-foreground">AI Score</h3>
-                  <Badge variant="outline" className="ml-1">
-                    {aiScore.score >= 80 ? "Excellent Match" : 
-                     aiScore.score >= 60 ? "Good Match" : 
-                     aiScore.score >= 40 ? "Moderate Match" : 
-                     aiScore.score >= 20 ? "Low Match" : "Poor Match"}
-                  </Badge>
+      {/* AI Screening Results Card - Complete Details */}
+      {candidate.aiScore !== undefined && candidate.aiScore !== null && (
+        <Card className="border-2 border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-pink-500/5">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
+                  <Brain className="h-6 w-6 text-white" />
                 </div>
-                <p className="text-sm text-muted-foreground">{aiScore.reason}</p>
+                <div>
+                  <CardTitle className="text-xl">AI Screening Results</CardTitle>
+                  <CardDescription>
+                    Automated candidate evaluation • Scored on {candidate.aiScoredAt ? formatDate(candidate.aiScoredAt) : "N/A"}
+                  </CardDescription>
+                </div>
+              </div>
+              {/* Confidence Badge */}
+              {candidate.aiConfidence && (
+                <Badge className={`text-sm px-3 py-1 ${getConfidenceColor(candidate.aiConfidence)}`}>
+                  <Shield className="h-4 w-4 mr-1.5" />
+                  {candidate.aiConfidence}% Confidence
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Main Score and Recommendation */}
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Score Circle */}
+              <div className="flex items-center gap-6">
+                <div className={`flex h-28 w-28 flex-shrink-0 flex-col items-center justify-center rounded-full border-4 ${getScoreColor(candidate.aiScore)}`}>
+                  <Zap className="h-6 w-6" />
+                  <span className="text-3xl font-bold">{candidate.aiScore}</span>
+                  <span className="text-xs opacity-70">/ 100</span>
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold">Match Score</h3>
+                  <Badge variant="outline" className={`${recommendationInfo.color} text-sm px-3 py-1`}>
+                    <RecommendationIcon className="h-4 w-4 mr-1.5" />
+                    {recommendationInfo.text}
+                  </Badge>
+                  {candidate.aiDataQuality && (
+                    <p className="text-xs text-muted-foreground">
+                      Data Quality: {candidate.aiDataQuality}%
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Scoring Breakdown - Skills Focused */}
+              {candidate.aiBreakdown && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                    Score Breakdown <span className="text-blue-500">(Skills-Focused)</span>
+                  </h4>
+                  
+                  {/* Skills Match - 50% (HIGHEST PRIORITY) */}
+                  <div className="space-y-1 bg-blue-50 dark:bg-blue-950/20 p-2 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2 font-medium">
+                        <Target className="h-4 w-4 text-blue-600" />
+                        Skills Match
+                        <Badge variant="outline" className="text-[10px] bg-blue-100 text-blue-700 border-blue-300">HIGHEST</Badge>
+                      </span>
+                      <span className="font-bold text-blue-700">{candidate.aiBreakdown.skillsMatch?.score || 0}%</span>
+                    </div>
+                    <Progress value={candidate.aiBreakdown.skillsMatch?.score || 0} className="h-2.5" />
+                    <p className="text-xs text-blue-600">Weight: 50% • Contribution: {candidate.aiBreakdown.skillsMatch?.weighted || 0} pts</p>
+                    {candidate.aiBreakdown.skillsMatch?.details && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">{candidate.aiBreakdown.skillsMatch.details}</p>
+                    )}
+                  </div>
+
+                  {/* Experience Relevance - 30% (HIGH PRIORITY) */}
+                  <div className="space-y-1 bg-green-50 dark:bg-green-950/20 p-2 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2 font-medium">
+                        <Briefcase className="h-4 w-4 text-green-600" />
+                        Experience Relevance
+                        <Badge variant="outline" className="text-[10px] bg-green-100 text-green-700 border-green-300">HIGH</Badge>
+                      </span>
+                      <span className="font-bold text-green-700">{candidate.aiBreakdown.experienceRelevance?.score || 0}%</span>
+                    </div>
+                    <Progress value={candidate.aiBreakdown.experienceRelevance?.score || 0} className="h-2.5" />
+                    <p className="text-xs text-green-600">Weight: 30% • Contribution: {candidate.aiBreakdown.experienceRelevance?.weighted || 0} pts</p>
+                    {candidate.aiBreakdown.experienceRelevance?.details && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">{candidate.aiBreakdown.experienceRelevance.details}</p>
+                    )}
+                  </div>
+
+                  {/* Practical Exposure - 10% */}
+                  <div className="space-y-1 bg-purple-50 dark:bg-purple-950/20 p-2 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2">
+                        <Award className="h-4 w-4 text-purple-600" />
+                        Projects & Practical Work
+                      </span>
+                      <span className="font-medium text-purple-700">{candidate.aiBreakdown.practicalExposure?.score || 0}%</span>
+                    </div>
+                    <Progress value={candidate.aiBreakdown.practicalExposure?.score || 0} className="h-2" />
+                    <p className="text-xs text-purple-600">Weight: 10% • Contribution: {candidate.aiBreakdown.practicalExposure?.weighted || 0} pts</p>
+                    {candidate.aiBreakdown.practicalExposure?.details && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">{candidate.aiBreakdown.practicalExposure.details}</p>
+                    )}
+                  </div>
+
+                  {/* Education - 10% (LOWEST PRIORITY) */}
+                  <div className="space-y-1 p-2 rounded-lg border border-gray-200 dark:border-gray-700 opacity-75">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2">
+                        <GraduationCap className="h-4 w-4 text-gray-500" />
+                        Education
+                        <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-600 border-gray-300">LOWEST</Badge>
+                      </span>
+                      <span className="font-medium text-gray-600">{candidate.aiBreakdown.education?.score || 0}%</span>
+                    </div>
+                    <Progress value={candidate.aiBreakdown.education?.score || 0} className="h-2" />
+                    <p className="text-xs text-gray-500">Weight: 10% • Contribution: {candidate.aiBreakdown.education?.weighted || 0} pts</p>
+                    {candidate.aiBreakdown.education?.details && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">{candidate.aiBreakdown.education.details}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* AI Explanation */}
+            {candidate.aiExplanation && (
+              <div className="space-y-2">
+                <h4 className="font-semibold flex items-center gap-2">
+                  <Brain className="h-4 w-4 text-purple-500" />
+                  AI Analysis Summary
+                </h4>
+                <p className="text-sm text-muted-foreground leading-relaxed bg-muted/50 p-4 rounded-lg">
+                  {candidate.aiExplanation}
+                </p>
+              </div>
+            )}
+
+            {/* Detailed Analysis Sections */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Skills Analysis */}
+              {candidate.aiSkillsAnalysis && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold flex items-center gap-2 text-blue-700">
+                    <Target className="h-4 w-4" />
+                    Skills Analysis
+                  </h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                    {candidate.aiSkillsAnalysis}
+                  </p>
+                </div>
+              )}
+
+              {/* Experience Analysis */}
+              {candidate.aiExperienceAnalysis && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold flex items-center gap-2 text-green-700">
+                    <Briefcase className="h-4 w-4" />
+                    Experience Analysis
+                  </h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed bg-green-50 dark:bg-green-950/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                    {candidate.aiExperienceAnalysis}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Education Note */}
+            {candidate.aiEducationNote && (
+              <div className="space-y-2">
+                <h4 className="font-semibold flex items-center gap-2 text-gray-600">
+                  <GraduationCap className="h-4 w-4" />
+                  Education Note <span className="text-xs font-normal">(Lowest Priority Factor)</span>
+                </h4>
+                <p className="text-sm text-muted-foreground leading-relaxed bg-gray-50 dark:bg-gray-900/20 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                  {candidate.aiEducationNote}
+                </p>
+              </div>
+            )}
+
+            {/* Strengths and Concerns */}
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Strengths */}
+              {candidate.aiStrengths && candidate.aiStrengths.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold flex items-center gap-2 text-green-700">
+                    <TrendingUp className="h-4 w-4" />
+                    Strengths
+                  </h4>
+                  <ul className="space-y-2">
+                    {candidate.aiStrengths.map((strength, index) => (
+                      <li key={index} className="flex items-start gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span>{strength}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Concerns */}
+              {candidate.aiConcerns && candidate.aiConcerns.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold flex items-center gap-2 text-orange-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    Areas of Concern
+                  </h4>
+                  <ul className="space-y-2">
+                    {candidate.aiConcerns.map((concern, index) => (
+                      <li key={index} className="flex items-start gap-2 text-sm">
+                        <XCircle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                        <span>{concern}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Pending AI Screening Notice */}
+      {(candidate.aiScore === undefined || candidate.aiScore === null) && (
+        <Card className="border-2 border-dashed border-purple-300 bg-purple-50/50">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100">
+                <Brain className="h-6 w-6 text-purple-500 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">AI Screening Pending</h3>
+                <p className="text-sm text-muted-foreground">
+                  This candidate will be automatically screened when you visit the candidates list.
+                </p>
               </div>
             </div>
           </CardContent>
@@ -670,10 +694,10 @@ export default function CandidateDetailPage() {
                       {getStatusIcon(candidate.status)}
                       {getStatusLabel(candidate.status)}
                     </Badge>
-                    {aiScore?.score !== undefined && (
-                      <Badge className={`${getScoreColor(aiScore.score)} border`}>
+                    {candidate.aiScore !== undefined && candidate.aiScore !== null && (
+                      <Badge className={`${getScoreColor(candidate.aiScore)} border`}>
                         <Zap className="mr-1 h-3 w-3" />
-                        AI: {aiScore.score}%
+                        AI: {candidate.aiScore}%
                       </Badge>
                     )}
                   </div>
@@ -1122,6 +1146,18 @@ export default function CandidateDetailPage() {
                   </div>
                 </div>
                 
+                {candidate.aiScoredAt && (
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-500/10">
+                      <Brain className="h-4 w-4 text-purple-500" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">AI Screening Completed</p>
+                      <p className="text-sm text-muted-foreground">{formatDate(candidate.aiScoredAt)}</p>
+                    </div>
+                  </div>
+                )}
+                
                 {candidate.updatedAt && candidate.status !== "applied" && (
                   <div className="flex items-center gap-3">
                     <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getStatusColor(candidate.status)}`}>
@@ -1170,15 +1206,20 @@ export default function CandidateDetailPage() {
                 </Avatar>
                 <div className="flex-1">
                   <p className="font-semibold text-foreground">{candidate.applicantName}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {job?.title}
-                  </p>
+                  <p className="text-sm text-muted-foreground">{job?.title}</p>
                   {candidate.applicantEmail && (
-                    <p className="text-xs text-green-600 mt-1">
-                      📧 {candidate.applicantEmail}
-                    </p>
+                    <p className="text-xs text-green-600 mt-1">📧 {candidate.applicantEmail}</p>
                   )}
                 </div>
+                {candidate.aiScore !== undefined && (
+                  <div className={`flex flex-col items-center rounded-lg border px-3 py-1.5 ${getScoreColor(candidate.aiScore)}`}>
+                    <div className="flex items-center gap-1">
+                      <Zap className="h-3 w-3" />
+                      <span className="text-lg font-bold">{candidate.aiScore}</span>
+                    </div>
+                    <span className="text-[10px] uppercase">AI Score</span>
+                  </div>
+                )}
               </div>
               
               <div className="mt-4 rounded-lg border border-green-500/30 bg-green-500/5 p-3">
@@ -1239,4 +1280,3 @@ export default function CandidateDetailPage() {
     </div>
   )
 }
-

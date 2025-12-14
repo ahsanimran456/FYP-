@@ -1,10 +1,18 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
@@ -27,12 +35,13 @@ import {
   User,
   Eye,
 } from "lucide-react"
-import { doc, getDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, increment } from "firebase/firestore"
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, increment, arrayUnion } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { uploadResume } from "@/lib/supabase"
 
 export default function JobDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const { toast } = useToast()
   const [job, setJob] = useState(null)
   const [similarJobs, setSimilarJobs] = useState([])
@@ -44,6 +53,10 @@ export default function JobDetailPage() {
   const [userId, setUserId] = useState(null)
   const [isUploadingCV, setIsUploadingCV] = useState(false)
   const [hasApplied, setHasApplied] = useState(false)
+  
+  // Validation dialog state
+  const [showValidationDialog, setShowValidationDialog] = useState(false)
+  const [validationErrors, setValidationErrors] = useState([])
 
   // Get time ago string
   const getTimeAgo = (date) => {
@@ -98,22 +111,39 @@ export default function JobDetailPage() {
     }
   }
 
-  // Increment view count
-  const incrementViewCount = async (jobId) => {
+  // Increment view count - only once per user per job
+  // Stores user IDs in viewedBy array on the job document
+  // Returns true if view was incremented, false otherwise
+  const incrementViewCount = async (jobId, jobData) => {
     try {
-      const viewedKey = `job_viewed_${jobId}`
-      const alreadyViewed = sessionStorage.getItem(viewedKey)
+      const uid = localStorage.getItem("userId")
       
-      if (!alreadyViewed) {
-        const jobRef = doc(db, "jobs", jobId)
-        await updateDoc(jobRef, {
-          views: increment(1)
-        })
-        sessionStorage.setItem(viewedKey, "true")
-        console.log("✅ View count incremented for job:", jobId)
+      // Only track views for logged-in users
+      if (!uid) {
+        console.log("ℹ️ User not logged in, skipping view tracking")
+        return false
       }
+      
+      // Check if user has already viewed this job (viewedBy array stores user IDs)
+      const viewedBy = Array.isArray(jobData.viewedBy) ? jobData.viewedBy : []
+      
+      if (viewedBy.includes(uid)) {
+        console.log("ℹ️ User has already viewed this job, not incrementing view count")
+        return false
+      }
+      
+      // First time viewing - add user ID to viewedBy array and increment view count
+      const jobRef = doc(db, "jobs", jobId)
+      await updateDoc(jobRef, {
+        views: increment(1),
+        viewedBy: arrayUnion(uid)
+      })
+      
+      console.log("✅ View count incremented for job:", jobId)
+      return true
     } catch (error) {
-      console.error("Error incrementing view count:", error)
+      console.error("Error tracking view:", error)
+      return false
     }
   }
 
@@ -165,6 +195,48 @@ export default function JobDetailPage() {
     }
   }
 
+  // Validate user profile before applying
+  const handleApplyClick = () => {
+    const errors = []
+    
+    // Check if user is logged in
+    if (!userId) {
+      toast({
+        title: "Login Required",
+        description: "Please login to apply for this job.",
+        variant: "destructive",
+      })
+      router.push("/login")
+      return
+    }
+    
+    // Check basic information
+    if (!userData?.name || userData.name.trim() === "") {
+      errors.push("Full Name")
+    }
+    if (!userData?.email || userData.email.trim() === "") {
+      errors.push("Email Address")
+    }
+    if (!userData?.phone || userData.phone.trim() === "") {
+      errors.push("Phone Number")
+    }
+    
+    // Check CV/Resume
+    if (!userData?.resumeUrl) {
+      errors.push("CV/Resume")
+    }
+    
+    // If there are validation errors, show dialog
+    if (errors.length > 0) {
+      setValidationErrors(errors)
+      setShowValidationDialog(true)
+      return
+    }
+    
+    // All validations passed, proceed to apply
+    router.push(`/applicant/jobs/${job.id}/apply`)
+  }
+
   // Fetch job data from Firestore
   const fetchJob = async () => {
     try {
@@ -191,8 +263,9 @@ export default function JobDetailPage() {
         return
       }
       
-      // Increment view count
-      await incrementViewCount(params.id)
+      // Increment view count (returns true if incremented)
+      // Pass job data so we can check the viewedBy array
+      const viewIncremented = await incrementViewCount(params.id, data)
       
       // Check if user has already applied
       const applicantsArray = Array.isArray(data.applicants) ? data.applicants : []
@@ -204,6 +277,10 @@ export default function JobDetailPage() {
         setHasApplied(alreadyApplied)
       }
       
+      // Calculate correct view count (add 1 only if this view was counted)
+      const currentViews = data.views || 0
+      const displayViews = viewIncremented ? currentViews + 1 : currentViews
+      
       const jobData = {
         id: jobDoc.id,
         title: data.jobtitle || data.title || "Untitled Job",
@@ -214,7 +291,7 @@ export default function JobDetailPage() {
         experience: getExperienceLabel(data.experience),
         posted: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.postedDate)),
         applicants: applicantsArray.length,
-        views: (data.views || 0) + 1, // Show updated count
+        views: displayViews,
         department: data.department || "General",
         description: data.description || "No description provided.",
         responsibilities: data.responsibilities || [],
@@ -444,9 +521,7 @@ export default function JobDetailPage() {
                       ✓ Already Applied
                     </Button>
                   ) : (
-                    <Link href={`/applicant/jobs/${job.id}/apply`}>
-                      <Button size="lg">Apply Now</Button>
-                    </Link>
+                    <Button size="lg" onClick={handleApplyClick}>Apply Now</Button>
                   )}
                 </div>
               </div>
@@ -638,11 +713,9 @@ export default function JobDetailPage() {
                     ✓ Already Applied
                   </Button>
                 ) : (
-                  <Link href={`/applicant/jobs/${job.id}/apply`}>
-                    <Button className="w-full" size="lg">
-                      Apply for this position
-                    </Button>
-                  </Link>
+                  <Button className="w-full" size="lg" onClick={handleApplyClick}>
+                    Apply for this position
+                  </Button>
                 )}
                 <Separator />
                 <div className="space-y-2 text-center text-sm text-muted-foreground">
@@ -830,6 +903,65 @@ export default function JobDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Validation Dialog - Missing Profile Info */}
+      <Dialog open={showValidationDialog} onOpenChange={setShowValidationDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Complete Your Profile
+            </DialogTitle>
+            <DialogDescription>
+              Please complete your profile before applying for this job. The following information is required:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {validationErrors.map((error, index) => (
+              <div key={index} className="flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-100">
+                  {error === "CV/Resume" ? (
+                    <FileText className="h-4 w-4 text-orange-600" />
+                  ) : (
+                    <User className="h-4 w-4 text-orange-600" />
+                  )}
+                </div>
+                <span className="font-medium text-orange-800">{error}</span>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setShowValidationDialog(false)}>
+              Cancel
+            </Button>
+            {validationErrors.includes("CV/Resume") && !validationErrors.some(e => e !== "CV/Resume") ? (
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => {
+                    handleCVUpload(e)
+                    setShowValidationDialog(false)
+                  }}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  disabled={isUploadingCV}
+                />
+                <Button>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload CV Now
+                </Button>
+              </div>
+            ) : (
+              <Link href="/applicant/profile">
+                <Button onClick={() => setShowValidationDialog(false)}>
+                  <User className="mr-2 h-4 w-4" />
+                  Go to Profile
+                </Button>
+              </Link>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

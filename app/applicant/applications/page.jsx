@@ -61,11 +61,15 @@ export default function ApplicationsPage() {
           location: jobData.location || "Not specified",
           salary: jobData.salary || "Competitive",
           appliedDate: userApplication.appliedAt ? new Date(userApplication.appliedAt) : new Date(),
+          jobCreatedAt: jobData.createdAt?.toDate?.() || new Date(),
           status: userApplication.status || "applied",
           coverLetter: userApplication.coverLetter,
           department: jobData.department || "General",
           interviewDetails: userApplication.interviewDetails || null,
           applicantData: userApplication,
+          // Auto-rejection info
+          autoRejected: userApplication.autoRejected || false,
+          autoRejectionReason: userApplication.autoRejectionReason || null,
         })
       }
     })
@@ -377,6 +381,7 @@ export default function ApplicationsPage() {
               <TabsTrigger value="active">Active ({statusCounts.active})</TabsTrigger>
               <TabsTrigger value="interviews">Interviews ({statusCounts.interviews})</TabsTrigger>
               <TabsTrigger value="hired">Hired ({statusCounts.hired})</TabsTrigger>
+              <TabsTrigger value="rejected">Rejected ({statusCounts.rejected})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="all" className="space-y-4">
@@ -430,17 +435,47 @@ export default function ApplicationsPage() {
                                 <span className="font-medium">Next:</span> {getNextStep(app.status)}
                               </p>
                             </div>
+                            {/* Show rejection reason if rejected */}
+                            {app.status === "rejected" && (
+                              <div className="mt-2 rounded-lg bg-red-50 dark:bg-red-950/20 p-3 border border-red-200 dark:border-red-800">
+                                <p className="text-sm text-red-700 dark:text-red-400">
+                                  <span className="font-medium">📋 Reason: </span>
+                                  {app.autoRejected 
+                                    ? app.autoRejectionReason || "Did not meet the job requirements based on AI screening."
+                                    : "Your profile did not match the job requirements at this time."
+                                  }
+                                </p>
+                                {app.autoRejected && (
+                                  <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                                    🤖 This decision was made by our AI screening system.
+                                  </p>
+                                )}
+                              </div>
+                            )}
                             {/* Interview Details */}
                             {app.status === "interview_scheduled" && app.interviewDetails && (
                               <div className="mt-2 rounded-lg bg-purple-500/10 p-3 border border-purple-500/20">
                                 <p className="text-sm font-medium text-purple-700 dark:text-purple-400">
                                   📅 Interview: {app.interviewDetails.date} at {app.interviewDetails.time}
                                 </p>
-                                {app.interviewDetails.type && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Type: {app.interviewDetails.type === "google_meet" ? "📹 Google Meet" : 
+                                         app.interviewDetails.type === "zoom" ? "📹 Zoom" :
+                                         app.interviewDetails.type === "phone" ? "📞 Phone Call" : "🏢 On-site"}
+                                </p>
+                                {app.interviewDetails.link && (
+                                  <a 
+                                    href={app.interviewDetails.link} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-purple-600 hover:underline mt-1 inline-block"
+                                  >
+                                    🔗 Join Meeting
+                                  </a>
+                                )}
+                                {app.interviewDetails.location && (
                                   <p className="text-xs text-muted-foreground mt-1">
-                                    Type: {app.interviewDetails.type === "google_meet" ? "Google Meet" : 
-                                           app.interviewDetails.type === "zoom" ? "Zoom" :
-                                           app.interviewDetails.type === "phone" ? "Phone Call" : "On-site"}
+                                    📍 {app.interviewDetails.location}
                                   </p>
                                 )}
                               </div>
@@ -557,10 +592,20 @@ export default function ApplicationsPage() {
                                     <p className="text-sm font-medium text-purple-700 dark:text-purple-400">
                                       📅 {app.interviewDetails.date} at {app.interviewDetails.time}
                                     </p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {app.interviewDetails.type === "google_meet" ? "📹 Google Meet" : 
+                                       app.interviewDetails.type === "zoom" ? "📹 Zoom" :
+                                       app.interviewDetails.type === "phone" ? "📞 Phone Call" : "🏢 On-site"}
+                                    </p>
                                     {app.interviewDetails.link && (
-                                      <a href={app.interviewDetails.link} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:underline">
-                                        Join Meeting
+                                      <a href={app.interviewDetails.link} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:underline mt-1 inline-block">
+                                        🔗 Join Meeting
                                       </a>
+                                    )}
+                                    {app.interviewDetails.location && (
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        📍 {app.interviewDetails.location}
+                                      </p>
                                     )}
                                   </div>
                                 )}
@@ -620,6 +665,85 @@ export default function ApplicationsPage() {
                             </div>
                             <Link href={`/applicant/jobs/${app.jobId}`}>
                               <Button variant="outline" size="sm">View Job</Button>
+                            </Link>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
+            </TabsContent>
+
+            <TabsContent value="rejected" className="space-y-4">
+              {applications
+                .filter((app) => app.status === "rejected")
+                .length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center p-12">
+                      <XCircle className="h-12 w-12 text-muted-foreground" />
+                      <h2 className="mt-4 text-xl font-semibold">No rejected applications</h2>
+                      <p className="mt-2 text-center text-muted-foreground">
+                        Good news! None of your applications have been rejected.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  applications
+                    .filter((app) => app.status === "rejected")
+                    .map((app) => (
+                      <Card key={app.id} className="overflow-hidden border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10">
+                        <CardContent className="p-6">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="flex gap-4">
+                              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border bg-red-100 dark:bg-red-900/30 text-red-600 font-bold">
+                                {app.company?.charAt(0) || "C"}
+                              </div>
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <div className="flex-1">
+                                    <h3 className="font-semibold text-foreground">{app.title}</h3>
+                                    <p className="text-sm text-muted-foreground">{app.company}</p>
+                                  </div>
+                                  <Badge className="bg-red-500/10 text-red-700 dark:text-red-400">
+                                    {app.autoRejected ? "🤖 Auto-Rejected" : "Rejected"}
+                                  </Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="h-4 w-4" />
+                                    {app.location}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-4 w-4" />
+                                    Applied {app.appliedDate.toLocaleDateString()}
+                                  </span>
+                                </div>
+                                {/* Rejection Reason */}
+                                <div className="rounded-lg bg-red-100 dark:bg-red-900/30 p-3 border border-red-200 dark:border-red-800">
+                                  <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-1">
+                                    📋 Rejection Reason:
+                                  </p>
+                                  <p className="text-sm text-red-700 dark:text-red-400">
+                                    {app.autoRejected 
+                                      ? app.autoRejectionReason || "Your profile did not meet the minimum requirements based on AI screening analysis."
+                                      : "After careful review, the recruiter decided to proceed with other candidates whose qualifications more closely match their requirements."
+                                    }
+                                  </p>
+                                  {app.autoRejected && (
+                                    <p className="text-xs text-red-600 dark:text-red-500 mt-2 flex items-center gap-1">
+                                      <AlertCircle className="h-3 w-3" />
+                                      Decision made by AI screening system based on skills and experience match.
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  💡 Tip: Keep improving your profile and skills. Apply for other opportunities that match your experience!
+                                </p>
+                              </div>
+                            </div>
+                            <Link href={`/applicant/jobs/${app.jobId}`}>
+                              <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50">
+                                View Job
+                              </Button>
                             </Link>
                           </div>
                         </CardContent>
